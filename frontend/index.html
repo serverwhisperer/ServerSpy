@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ServerScout - Server Inventory Management</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🔍</span>
+                <h1>ServerScout</h1>
+                <span class="logo-subtitle">Server Inventory Management</span>
+            </div>
+            <div class="header-stats" id="headerStats">
+                <div class="stat-item">
+                    <span class="stat-value" id="statTotal">0</span>
+                    <span class="stat-label">Total</span>
+                </div>
+                <div class="stat-item online">
+                    <span class="stat-value" id="statOnline">0</span>
+                    <span class="stat-label">Online</span>
+                </div>
+                <div class="stat-item offline">
+                    <span class="stat-value" id="statOffline">0</span>
+                    <span class="stat-label">Offline</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" onclick="showAddServerModal()">
+                    <span class="btn-icon">➕</span> Add Server
+                </button>
+                <button class="btn btn-secondary" onclick="showBulkImportModal()">
+                    <span class="btn-icon">📁</span> Bulk Import
+                </button>
+                <button class="btn btn-success" onclick="scanAllServers()" id="btnScanAll">
+                    <span class="btn-icon">🔄</span> Scan All
+                </button>
+                <button class="btn btn-info" onclick="exportExcel()">
+                    <span class="btn-icon">📊</span> Export Excel
+                </button>
+                <button class="btn btn-secondary" onclick="refreshServers()">
+                    <span class="btn-icon">🔃</span> Refresh
+                </button>
+            </div>
+            <div class="toolbar-filters">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search hostname or IP..." onkeyup="filterServers()">
+                </div>
+                <select id="filterOS" onchange="filterServers()">
+                    <option value="">All OS</option>
+                    <option value="Windows">Windows</option>
+                    <option value="Linux">Linux</option>
+                </select>
+                <select id="filterStatus" onchange="filterServers()">
+                    <option value="">All Status</option>
+                    <option value="Online">Online</option>
+                    <option value="Offline">Offline</option>
+                    <option value="Not Scanned">Not Scanned</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Server Table -->
+        <div class="table-container">
+            <table class="server-table" id="serverTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('hostname')">Hostname <span class="sort-icon">⇅</span></th>
+                        <th onclick="sortTable('ip')">IP Address <span class="sort-icon">⇅</span></th>
+                        <th onclick="sortTable('os_type')">OS <span class="sort-icon">⇅</span></th>
+                        <th onclick="sortTable('brand')">Brand</th>
+                        <th onclick="sortTable('model')">Model</th>
+                        <th>CPU</th>
+                        <th>RAM</th>
+                        <th>Disk</th>
+                        <th onclick="sortTable('status')">Status <span class="sort-icon">⇅</span></th>
+                        <th>Last Scan</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="serverTableBody">
+                    <!-- Server rows will be inserted here -->
+                </tbody>
+            </table>
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <span class="empty-icon">🖥️</span>
+                <h3>No servers found</h3>
+                <p>Add your first server to get started</p>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <p id="loadingText">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Add Server Modal -->
+    <div class="modal" id="addServerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Server</h2>
+                <button class="modal-close" onclick="closeModal('addServerModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addServerForm" onsubmit="addServer(event)">
+                    <div class="form-group">
+                        <label for="serverIP">IP Address *</label>
+                        <input type="text" id="serverIP" placeholder="192.168.1.100" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serverUsername">Username *</label>
+                        <input type="text" id="serverUsername" placeholder="Administrator" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serverPassword">Password *</label>
+                        <input type="password" id="serverPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serverOS">Operating System *</label>
+                        <select id="serverOS" required>
+                            <option value="Windows">Windows</option>
+                            <option value="Linux">Linux</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('addServerModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Server</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Modal -->
+    <div class="modal" id="bulkImportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Bulk Import Servers</h2>
+                <button class="modal-close" onclick="closeModal('bulkImportModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="import-info">
+                    <p>Upload a CSV file with the following columns:</p>
+                    <code>ip,username,password,os_type</code>
+                    <p class="example">Example: 192.168.1.100,Administrator,password123,Windows</p>
+                </div>
+                <form id="bulkImportForm" onsubmit="bulkImport(event)">
+                    <div class="form-group">
+                        <label for="csvFile">Select CSV File</label>
+                        <input type="file" id="csvFile" accept=".csv" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('bulkImportModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Details Modal -->
+    <div class="modal" id="serverDetailsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Server Details</h2>
+                <button class="modal-close" onclick="closeModal('serverDetailsModal')">&times;</button>
+            </div>
+            <div class="modal-body" id="serverDetailsContent">
+                <!-- Server details will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
