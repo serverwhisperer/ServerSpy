@@ -242,14 +242,15 @@ def open_browser():
 
 
 if __name__ == '__main__':
-    # Open browser in separate thread
-    threading.Timer(1.5, open_browser).start()
-    
     print("\n" + "="*50)
     print("  ServerScout - Server Inventory Management")
     print("="*50)
     print("\n  Starting server at http://localhost:5000")
     print("  Press Ctrl+C to stop\n")
+    
+    # Only open browser if NOT running under Electron
+    if not os.environ.get('ELECTRON_RUN'):
+        threading.Timer(1.5, open_browser).start()
     
     app.run(host='0.0.0.0', port=5000, debug=False)
 

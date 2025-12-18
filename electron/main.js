@@ -32,7 +32,7 @@ function startFlaskServer() {
 
         pythonProcess = spawn(pythonCmd, [appPath], {
             cwd: backendPath,
-            env: { ...process.env, PYTHONUNBUFFERED: '1' },
+            env: { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_RUN: '1' },
             stdio: ['ignore', 'pipe', 'pipe']
         });
 
