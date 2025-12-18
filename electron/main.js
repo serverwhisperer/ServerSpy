@@ -1,9 +1,10 @@
 const { app, BrowserWindow, shell, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 let mainWindow;
-let pythonProcess;
+let backendProcess;
 const PORT = 5000;
 
 // Get the correct paths based on whether we're in dev or production
@@ -14,71 +15,118 @@ function getResourcePath(relativePath) {
     return path.join(__dirname, '..', relativePath);
 }
 
+// Check if we're running in packaged/production mode
+function isPackaged() {
+    return app.isPackaged;
+}
+
 // Simple delay function
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Start the Flask server
-function startFlaskServer() {
+// Start the backend server (exe in production, python in development)
+function startBackendServer() {
     return new Promise((resolve, reject) => {
         const backendPath = getResourcePath('backend');
-        const appPath = path.join(backendPath, 'app.py');
+        
+        let cmd, args, execPath;
+        
+        if (isPackaged()) {
+            // Production: Use compiled exe
+            execPath = path.join(backendPath, 'serverscout-backend.exe');
+            
+            // Check if exe exists
+            if (!fs.existsSync(execPath)) {
+                reject(new Error(`Backend executable not found: ${execPath}`));
+                return;
+            }
+            
+            cmd = execPath;
+            args = [];
+            console.log('Starting backend from exe:', execPath);
+        } else {
+            // Development: Use Python
+            const appPath = path.join(backendPath, 'app.py');
+            cmd = process.platform === 'win32' ? 'python' : 'python3';
+            args = [appPath];
+            console.log('Starting backend from Python:', appPath);
+        }
 
-        console.log('Starting Flask server from:', appPath);
-
-        // On Windows, prefer 'python' or 'py'
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-
-        pythonProcess = spawn(pythonCmd, [appPath], {
+        backendProcess = spawn(cmd, args, {
             cwd: backendPath,
             env: { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_RUN: '1' },
-            stdio: ['ignore', 'pipe', 'pipe']
+            stdio: ['ignore', 'pipe', 'pipe'],
+            // Important for Windows exe
+            windowsHide: true
         });
 
         let serverStarted = false;
+        let processExited = false;
+        let fallbackTimeout = null;
 
-        pythonProcess.stdout.on('data', (data) => {
+        const cleanup = () => {
+            if (fallbackTimeout) {
+                clearTimeout(fallbackTimeout);
+                fallbackTimeout = null;
+            }
+        };
+
+        backendProcess.stdout.on('data', (data) => {
             const output = data.toString();
-            console.log(`Flask: ${output}`);
+            console.log(`Backend: ${output}`);
             
-            // Detect when Flask is ready
+            // Detect when server is ready
             if (output.includes('Running on') && !serverStarted) {
                 serverStarted = true;
+                cleanup();
                 resolve();
             }
         });
 
-        pythonProcess.stderr.on('data', (data) => {
+        backendProcess.stderr.on('data', (data) => {
             const output = data.toString();
-            console.log(`Flask: ${output}`);
+            console.log(`Backend: ${output}`);
             
             // Flask also outputs "Running on" to stderr sometimes
             if (output.includes('Running on') && !serverStarted) {
                 serverStarted = true;
+                cleanup();
                 resolve();
             }
         });
 
-        pythonProcess.on('error', (err) => {
-            console.error('Failed to start Flask:', err);
-            reject(err);
-        });
-
-        pythonProcess.on('close', (code) => {
-            console.log(`Flask process exited with code ${code}`);
-            if (!serverStarted && code !== 0) {
-                reject(new Error(`Flask exited with code ${code}`));
+        backendProcess.on('error', (err) => {
+            console.error('Failed to start backend:', err);
+            processExited = true;
+            cleanup();
+            if (!serverStarted) {
+                reject(err);
             }
         });
 
-        // Fallback timeout - if no "Running on" detected in 10 seconds, assume it's ready
-        setTimeout(() => {
+        backendProcess.on('close', (code) => {
+            console.log(`Backend process exited with code ${code}`);
+            processExited = true;
+            cleanup();
+            
+            // If server hasn't started yet and process exited, it's a failure
             if (!serverStarted) {
+                reject(new Error(`Backend process exited unexpectedly with code ${code}`));
+            }
+        });
+
+        // Fallback timeout - only resolve if process is still running
+        fallbackTimeout = setTimeout(() => {
+            if (!serverStarted && !processExited) {
+                // Process is still running but no "Running on" detected
+                // Assume it's ready (some configs may not output this)
+                console.log('Timeout reached, assuming server is ready');
                 serverStarted = true;
                 resolve();
             }
-        }, 10000);
+            // If processExited is true, the close handler already rejected
+        }, 15000); // Longer timeout for packaged app
     });
 }
 
@@ -116,16 +164,37 @@ function createWindow() {
 // Show error dialog and quit
 function handleStartupError(error) {
     console.error('Failed to start application:', error);
-    dialog.showErrorBox('Startup Error', 
-        `Failed to start the application: ${error.message}\n\nMake sure Python is installed and all dependencies are available.`);
+    
+    let message = `Failed to start the application:\n\n${error.message}`;
+    
+    if (!isPackaged()) {
+        message += '\n\nMake sure Python is installed and all dependencies are available.';
+    }
+    
+    dialog.showErrorBox('Startup Error', message);
     app.quit();
+}
+
+// Kill backend process properly on Windows
+function killBackend() {
+    if (backendProcess) {
+        if (process.platform === 'win32') {
+            // On Windows, use taskkill to ensure child processes are killed
+            spawn('taskkill', ['/pid', backendProcess.pid, '/f', '/t'], { windowsHide: true });
+        } else {
+            backendProcess.kill('SIGTERM');
+        }
+        backendProcess = null;
+    }
 }
 
 // App ready event
 app.whenReady().then(async () => {
     try {
-        console.log('Starting Flask server...');
-        await startFlaskServer();
+        console.log('Starting backend server...');
+        console.log('Packaged:', isPackaged());
+        
+        await startBackendServer();
         
         // Small delay to ensure server is fully ready
         await delay(500);
@@ -138,10 +207,7 @@ app.whenReady().then(async () => {
 
 // Quit when all windows are closed
 app.on('window-all-closed', () => {
-    // Stop the Flask server
-    if (pythonProcess) {
-        pythonProcess.kill();
-    }
+    killBackend();
     
     if (process.platform !== 'darwin') {
         app.quit();
@@ -156,7 +222,10 @@ app.on('activate', () => {
 
 // Clean up on exit
 app.on('before-quit', () => {
-    if (pythonProcess) {
-        pythonProcess.kill();
-    }
+    killBackend();
+});
+
+// Handle app quit
+app.on('quit', () => {
+    killBackend();
 });

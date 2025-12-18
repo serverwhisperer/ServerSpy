@@ -1,49 +1,78 @@
 {
   "name": "serverscout",
   "version": "1.0.0",
-  "description": "Server Inventory Management Tool",
+  "description": "Server Inventory Management Tool - Developed by Fatih Tunahan Sakin",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
   },
-  "author": "ServerWhisperer",
+  "author": {
+    "name": "Fatih Tunahan Sakin",
+    "url": "https://github.com/serverwhisperer"
+  },
+  "homepage": "https://github.com/serverwhisperer/ServerSpy",
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1"
   },
   "build": {
-    "appId": "com.serverwhisperer.serverscout",
+    "appId": "com.fatihtunahans.serverscout",
     "productName": "ServerScout",
+    "copyright": "Copyright © 2025 Fatih Tunahan Sakin",
     "directories": {
       "output": "dist"
     },
     "win": {
-      "target": "nsis",
-      "icon": "icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico",
+      "publisherName": "Fatih Tunahan Sakin",
+      "legalTrademarks": "ServerScout by Fatih Tunahan Sakin"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ServerScout",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "license": "license.txt",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": true
+    },
+    "portable": {
+      "artifactName": "ServerScout-Portable-${version}.exe"
     },
     "extraResources": [
       {
-        "from": "../backend",
+        "from": "../backend/dist/serverscout-backend",
         "to": "backend",
-        "filter": ["**/*", "!__pycache__/**"]
+        "filter": ["**/*"]
       },
       {
         "from": "../frontend",
         "to": "frontend",
         "filter": ["**/*"]
-      },
-      {
-        "from": "../data",
-        "to": "data",
-        "filter": ["**/*"]
       }
-    ]
+    ],
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "asar": false
   }
 }
-

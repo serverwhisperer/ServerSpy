@@ -8,6 +8,8 @@ let servers = [];
 let filteredServers = [];
 let sortColumn = 'hostname';
 let sortDirection = 'asc';
+let isLoading = false;
+let confirmCallback = null;
 
 // API Base URL
 const API_BASE = '';
@@ -17,6 +19,7 @@ const API_BASE = '';
 document.addEventListener('DOMContentLoaded', () => {
     loadServers();
     loadStats();
+    loadCredentials();
 });
 
 // ==================== API CALLS ====================
@@ -30,11 +33,9 @@ async function apiCall(endpoint, options = {}) {
                 ...options.headers
             }
         });
-        const data = await response.json();
-        return data;
+        return await response.json();
     } catch (error) {
         console.error('API Error:', error);
-        showToast('Connection error. Please check if the server is running.', 'error');
         throw error;
     }
 }
@@ -47,8 +48,6 @@ async function loadServers() {
             filteredServers = [...servers];
             renderTable();
             updateEmptyState();
-        } else {
-            showToast('Failed to load servers', 'error');
         }
     } catch (error) {
         console.error('Error loading servers:', error);
@@ -68,19 +67,156 @@ async function loadStats() {
     }
 }
 
+async function loadCredentials() {
+    try {
+        const data = await apiCall('/api/credentials');
+        if (data.success) {
+            const creds = data.credentials;
+            if (creds.windows) {
+                document.getElementById('winUsername').value = creds.windows.username || '';
+                document.getElementById('winCredStatus').textContent = creds.windows.has_password ? '✓ Kayıtlı' : '';
+            }
+            if (creds.linux) {
+                document.getElementById('linuxUsername').value = creds.linux.username || '';
+                document.getElementById('linuxCredStatus').textContent = creds.linux.has_password ? '✓ Kayıtlı' : '';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading credentials:', error);
+    }
+}
+
+// ==================== CUSTOM CONFIRM MODAL ====================
+
+function showConfirm(title, message, yesText, callback) {
+    confirmCallback = callback;
+    
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmYesBtn').textContent = yesText;
+    
+    const modal = document.getElementById('confirmModal');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function handleConfirm(result) {
+    const modal = document.getElementById('confirmModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+    
+    if (confirmCallback) {
+        const cb = confirmCallback;
+        confirmCallback = null;
+        
+        // Small delay to ensure modal is fully closed
+        setTimeout(() => {
+            cb(result);
+        }, 100);
+    }
+}
+
+// ==================== CREDENTIALS ====================
+
+async function saveCredentials(osType) {
+    let username, password, statusEl;
+    
+    if (osType === 'windows') {
+        username = document.getElementById('winUsername').value.trim();
+        password = document.getElementById('winPassword').value;
+        statusEl = document.getElementById('winCredStatus');
+    } else {
+        username = document.getElementById('linuxUsername').value.trim();
+        password = document.getElementById('linuxPassword').value;
+        statusEl = document.getElementById('linuxCredStatus');
+    }
+    
+    if (!username || !password) {
+        showToast('Kullanıcı adı ve şifre giriniz', 'warning');
+        return;
+    }
+    
+    try {
+        const data = await apiCall('/api/credentials', {
+            method: 'POST',
+            body: JSON.stringify({ os_type: osType, username, password })
+        });
+        
+        if (data.success) {
+            statusEl.textContent = '✓ Kayıtlı';
+            if (osType === 'windows') {
+                document.getElementById('winPassword').value = '';
+            } else {
+                document.getElementById('linuxPassword').value = '';
+            }
+            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} bilgileri kaydedildi!`, 'success');
+        } else {
+            showToast(data.error || 'Kayıt başarısız', 'error');
+        }
+    } catch (error) {
+        showToast('Hata oluştu', 'error');
+    }
+}
+
+async function clearCredentials(osType) {
+    try {
+        const data = await apiCall('/api/credentials', {
+            method: 'POST',
+            body: JSON.stringify({ os_type: osType, username: '', password: '' })
+        });
+        
+        if (data.success) {
+            if (osType === 'windows') {
+                document.getElementById('winUsername').value = '';
+                document.getElementById('winPassword').value = '';
+                document.getElementById('winCredStatus').textContent = '';
+            } else {
+                document.getElementById('linuxUsername').value = '';
+                document.getElementById('linuxPassword').value = '';
+                document.getElementById('linuxCredStatus').textContent = '';
+            }
+            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} bilgileri temizlendi`, 'info');
+        }
+    } catch (error) {
+        showToast('Hata oluştu', 'error');
+    }
+}
+
 // ==================== SERVER MANAGEMENT ====================
 
 async function addServer(event) {
     event.preventDefault();
     
+    const ip = document.getElementById('serverIP').value.trim();
+    const osType = document.getElementById('serverOS').value;
+    const useCustom = document.getElementById('useCustomCreds').checked;
+    
+    if (!ip) {
+        showToast('IP adresi giriniz', 'warning');
+        return;
+    }
+    
     const serverData = {
-        ip: document.getElementById('serverIP').value.trim(),
-        username: document.getElementById('serverUsername').value.trim(),
-        password: document.getElementById('serverPassword').value,
-        os_type: document.getElementById('serverOS').value
+        ip: ip,
+        use_default: !useCustom,
+        auto_detect: !osType
     };
     
-    showLoading('Adding server...');
+    if (osType) {
+        serverData.os_type = osType;
+    }
+    
+    if (useCustom) {
+        serverData.username = document.getElementById('serverUsername').value.trim();
+        serverData.password = document.getElementById('serverPassword').value;
+        
+        if (!serverData.username || !serverData.password) {
+            showToast('Özel kimlik bilgisi giriniz', 'warning');
+            return;
+        }
+    }
+    
+    showLoading('Sunucu ekleniyor...');
     
     try {
         const data = await apiCall('/api/servers', {
@@ -88,141 +224,221 @@ async function addServer(event) {
             body: JSON.stringify(serverData)
         });
         
-        if (data.success) {
-            showToast('Server added successfully!', 'success');
-            closeModal('addServerModal');
-            document.getElementById('addServerForm').reset();
-            await loadServers();
-            await loadStats();
-        } else {
-            showToast(data.error || 'Failed to add server', 'error');
-        }
-    } catch (error) {
-        showToast('Error adding server', 'error');
-    } finally {
         hideLoading();
-    }
-}
-
-async function deleteServer(id) {
-    if (!confirm('Are you sure you want to delete this server?')) {
-        return;
-    }
-    
-    showLoading('Deleting server...');
-    
-    try {
-        const data = await apiCall(`/api/servers/${id}`, {
-            method: 'DELETE'
-        });
         
         if (data.success) {
-            showToast('Server deleted successfully!', 'success');
+            let msg = 'Sunucu eklendi!';
+            if (data.detected) {
+                msg = `Sunucu eklendi! OS: ${data.os_type}`;
+            }
+            showToast(msg, 'success');
+            closeModal('addServerModal');
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Failed to delete server', 'error');
+            showToast(data.error || 'Ekleme başarısız', 'error');
         }
     } catch (error) {
-        showToast('Error deleting server', 'error');
-    } finally {
         hideLoading();
+        showToast('Hata oluştu', 'error');
     }
 }
 
-async function bulkImport(event) {
-    event.preventDefault();
+function toggleCustomCreds() {
+    const show = document.getElementById('useCustomCreds').checked;
+    document.getElementById('customCredsSection').style.display = show ? 'block' : 'none';
+}
+
+function deleteServer(id) {
+    const server = servers.find(s => s.id === id);
+    const serverName = server ? (server.hostname || server.ip) : 'Bu sunucu';
     
-    const fileInput = document.getElementById('csvFile');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        showToast('Please select a CSV file', 'warning');
+    showConfirm(
+        '🗑️ Sunucu Sil',
+        `"${serverName}" sunucusunu silmek istediğinize emin misiniz?`,
+        'Evet, Sil',
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            showLoading('Siliniyor...');
+            
+            try {
+                const data = await apiCall(`/api/servers/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                hideLoading();
+                
+                if (data.success) {
+                    showToast('Sunucu silindi!', 'success');
+                    await loadServers();
+                    await loadStats();
+                } else {
+                    showToast(data.error || 'Silme başarısız', 'error');
+                }
+            } catch (error) {
+                hideLoading();
+                showToast('Hata oluştu', 'error');
+            }
+        }
+    );
+}
+
+function clearAllServers() {
+    if (servers.length === 0) {
+        showToast('Silinecek sunucu yok', 'warning');
         return;
     }
     
-    const formData = new FormData();
-    formData.append('file', file);
+    showConfirm(
+        '⚠️ Tümünü Sil',
+        `Tüm sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`,
+        'Evet, Tümünü Sil',
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            showLoading('Tüm sunucular siliniyor...');
+            
+            try {
+                const data = await apiCall('/api/servers/clear', {
+                    method: 'DELETE'
+                });
+                
+                hideLoading();
+                
+                if (data.success) {
+                    showToast('Tüm sunucular silindi!', 'success');
+                    await loadServers();
+                    await loadStats();
+                } else {
+                    showToast(data.error || 'Silme başarısız', 'error');
+                }
+            } catch (error) {
+                hideLoading();
+                showToast('Hata oluştu', 'error');
+            }
+        }
+    );
+}
+
+async function importServers(event) {
+    event.preventDefault();
     
-    showLoading('Importing servers...');
+    const fileInput = document.getElementById('importFile');
+    const contentInput = document.getElementById('importContent');
+    
+    let hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+    let hasContent = contentInput && contentInput.value && contentInput.value.trim();
+    
+    if (!hasFile && !hasContent) {
+        showToast('Dosya seçin veya içerik yapıştırın', 'warning');
+        return;
+    }
+    
+    showLoading('Sunucular import ediliyor...');
     
     try {
-        const response = await fetch(`${API_BASE}/api/servers/bulk`, {
-            method: 'POST',
-            body: formData
-        });
+        let response;
+        if (hasFile) {
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            response = await fetch(`${API_BASE}/api/servers/bulk`, {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            response = await fetch(`${API_BASE}/api/servers/bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: contentInput.value.trim() })
+            });
+        }
+        
         const data = await response.json();
+        
+        hideLoading();
         
         if (data.success) {
             const result = data.result;
-            showToast(`Imported ${result.success} servers. ${result.failed} failed.`, 
-                result.failed > 0 ? 'warning' : 'success');
-            closeModal('bulkImportModal');
-            document.getElementById('bulkImportForm').reset();
+            let msg = `${result.success} sunucu eklendi.`;
+            if (result.detected > 0) {
+                msg += ` (${result.detected} otomatik tespit)`;
+            }
+            if (result.failed > 0) {
+                msg += ` ${result.failed} başarısız.`;
+            }
+            showToast(msg, result.failed > 0 ? 'warning' : 'success');
+            closeModal('importModal');
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Failed to import servers', 'error');
+            showToast(data.error || 'Import başarısız', 'error');
         }
     } catch (error) {
-        showToast('Error importing servers', 'error');
-    } finally {
         hideLoading();
+        showToast('Hata oluştu', 'error');
     }
 }
 
 // ==================== SCANNING ====================
 
 async function scanServer(id) {
-    showLoading('Scanning server...');
+    showLoading('Taranıyor...');
     
     try {
         const data = await apiCall(`/api/scan/${id}`, {
             method: 'POST'
         });
         
+        hideLoading();
+        
         if (data.success) {
             const status = data.result.status;
-            showToast(`Scan complete: ${status}`, status === 'Online' ? 'success' : 'warning');
+            showToast(`Tarama tamamlandı: ${status}`, status === 'Online' ? 'success' : 'warning');
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Scan failed', 'error');
+            showToast(data.error || 'Tarama başarısız', 'error');
         }
     } catch (error) {
-        showToast('Error scanning server', 'error');
-    } finally {
         hideLoading();
+        showToast('Hata oluştu', 'error');
     }
 }
 
 async function scanAllServers() {
     if (servers.length === 0) {
-        showToast('No servers to scan', 'warning');
+        showToast('Taranacak sunucu yok', 'warning');
         return;
     }
     
     const btn = document.getElementById('btnScanAll');
-    btn.disabled = true;
-    showLoading(`Scanning ${servers.length} servers...`);
+    if (btn) btn.disabled = true;
+    showLoading(`${servers.length} sunucu taranıyor...`);
     
     try {
         const data = await apiCall('/api/scan-all', {
             method: 'POST'
         });
         
+        hideLoading();
+        if (btn) btn.disabled = false;
+        
         if (data.success) {
-            showToast(`Scan complete: ${data.online} online, ${data.offline} offline`, 'success');
+            let msg = `Tarama tamamlandı: ${data.online} çevrimiçi, ${data.offline} çevrimdışı`;
+            if (data.skipped > 0) {
+                msg += `, ${data.skipped} atlandı (kimlik bilgisi yok)`;
+            }
+            showToast(msg, 'success');
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Scan failed', 'error');
+            showToast(data.error || 'Tarama başarısız', 'error');
         }
     } catch (error) {
-        showToast('Error scanning servers', 'error');
-    } finally {
         hideLoading();
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
+        showToast('Hata oluştu', 'error');
     }
 }
 
@@ -230,13 +446,12 @@ async function scanAllServers() {
 
 function exportExcel() {
     if (servers.length === 0) {
-        showToast('No servers to export', 'warning');
+        showToast('Export edilecek sunucu yok', 'warning');
         return;
     }
     
-    showLoading('Generating Excel report...');
+    showLoading('Excel raporu oluşturuluyor...');
     
-    // Create a download link
     const link = document.createElement('a');
     link.href = `${API_BASE}/api/export/excel`;
     link.download = '';
@@ -246,7 +461,7 @@ function exportExcel() {
     
     setTimeout(() => {
         hideLoading();
-        showToast('Excel report downloaded!', 'success');
+        showToast('Excel raporu indirildi!', 'success');
     }, 1000);
 }
 
@@ -254,6 +469,8 @@ function exportExcel() {
 
 function renderTable() {
     const tbody = document.getElementById('serverTableBody');
+    if (!tbody) return;
+    
     tbody.innerHTML = '';
     
     filteredServers.forEach(server => {
@@ -271,9 +488,10 @@ function renderTable() {
             <td>${formatDate(server.last_scan)}</td>
             <td>
                 <div class="action-buttons">
-                    <button class="action-btn" onclick="showServerDetails(${server.id})" title="View Details">👁️</button>
-                    <button class="action-btn scan" onclick="scanServer(${server.id})" title="Scan">🔄</button>
-                    <button class="action-btn delete" onclick="deleteServer(${server.id})" title="Delete">🗑️</button>
+                    <button class="action-btn" onclick="showServerDetails(${server.id})" title="Detaylar">👁️</button>
+                    <button class="action-btn" onclick="showSetCredsModal(${server.id})" title="Kimlik Bilgisi">🔑</button>
+                    <button class="action-btn scan" onclick="scanServer(${server.id})" title="Tara">🔄</button>
+                    <button class="action-btn delete" onclick="deleteServer(${server.id})" title="Sil">🗑️</button>
                 </div>
             </td>
         `;
@@ -293,11 +511,6 @@ function renderOSBadge(osType) {
 
 function renderStatusBadge(status) {
     const statusClass = (status || 'not-scanned').toLowerCase().replace(' ', '-');
-    let icon = '⚪';
-    if (status === 'Online') icon = '🟢';
-    else if (status === 'Offline') icon = '🔴';
-    else icon = '🟡';
-    
     return `<span class="status-badge ${statusClass}">
         <span class="status-dot"></span>
         ${escapeHtml(status || 'Not Scanned')}
@@ -314,20 +527,19 @@ function renderCPUInfo(server) {
 // ==================== FILTERING & SORTING ====================
 
 function filterServers() {
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    const osFilter = document.getElementById('filterOS').value;
-    const statusFilter = document.getElementById('filterStatus').value;
+    const searchInput = document.getElementById('searchInput');
+    const filterOS = document.getElementById('filterOS');
+    const filterStatus = document.getElementById('filterStatus');
+    
+    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    const osFilter = filterOS ? filterOS.value : '';
+    const statusFilter = filterStatus ? filterStatus.value : '';
     
     filteredServers = servers.filter(server => {
-        // Search filter
         const matchesSearch = !searchTerm || 
             (server.hostname && server.hostname.toLowerCase().includes(searchTerm)) ||
             (server.ip && server.ip.toLowerCase().includes(searchTerm));
-        
-        // OS filter
         const matchesOS = !osFilter || server.os_type === osFilter;
-        
-        // Status filter
         const matchesStatus = !statusFilter || server.status === statusFilter;
         
         return matchesSearch && matchesOS && matchesStatus;
@@ -364,21 +576,23 @@ function sortTable(column) {
 
 // ==================== SERVER DETAILS ====================
 
-async function showServerDetails(id) {
+function showServerDetails(id) {
     const server = servers.find(s => s.id === id);
     if (!server) return;
     
     const content = document.getElementById('serverDetailsContent');
+    if (!content) return;
+    
     content.innerHTML = `
         <div class="server-details">
             <div class="detail-section">
-                <h3>📋 General Information</h3>
+                <h3>📋 Genel Bilgiler</h3>
                 <div class="detail-row">
                     <span class="detail-label">Hostname</span>
                     <span class="detail-value">${escapeHtml(server.hostname || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">IP Address</span>
+                    <span class="detail-label">IP Adresi</span>
                     <span class="detail-value">${escapeHtml(server.ip)}</span>
                 </div>
                 <div class="detail-row">
@@ -386,23 +600,19 @@ async function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.domain || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">OS Type</span>
+                    <span class="detail-label">İşletim Sistemi</span>
                     <span class="detail-value">${escapeHtml(server.os_type)}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">OS Version</span>
+                    <span class="detail-label">OS Versiyonu</span>
                     <span class="detail-value">${escapeHtml(server.os_version || '-')}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Service Pack</span>
-                    <span class="detail-value">${escapeHtml(server.service_pack || '-')}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>🏭 Hardware</h3>
+                <h3>🏭 Donanım</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Brand</span>
+                    <span class="detail-label">Marka</span>
                     <span class="detail-value">${escapeHtml(server.brand || '-')}</span>
                 </div>
                 <div class="detail-row">
@@ -410,27 +620,19 @@ async function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.model || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Serial Number</span>
+                    <span class="detail-label">Seri No</span>
                     <span class="detail-value">${escapeHtml(server.serial || '-')}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Motherboard</span>
-                    <span class="detail-value">${escapeHtml(server.motherboard || '-')}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>⚡ CPU</h3>
+                <h3>⚡ İşlemci</h3>
                 <div class="detail-row">
-                    <span class="detail-label">CPU Count</span>
-                    <span class="detail-value">${server.cpu_count || '-'}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Cores</span>
+                    <span class="detail-label">Çekirdek</span>
                     <span class="detail-value">${escapeHtml(server.cpu_cores || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Logical Processors</span>
+                    <span class="detail-label">Mantıksal İşlemci</span>
                     <span class="detail-value">${escapeHtml(server.cpu_logical_processors || '-')}</span>
                 </div>
                 <div class="detail-row">
@@ -440,29 +642,29 @@ async function showServerDetails(id) {
             </div>
             
             <div class="detail-section">
-                <h3>🧠 Memory</h3>
+                <h3>🧠 Bellek</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Physical RAM</span>
+                    <span class="detail-label">Fiziksel RAM</span>
                     <span class="detail-value">${escapeHtml(server.ram_physical || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Total RAM</span>
+                    <span class="detail-label">Toplam RAM</span>
                     <span class="detail-value">${formatRAM(server.ram_logical)}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>💾 Storage</h3>
+                <h3>💾 Depolama</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Disk Info</span>
+                    <span class="detail-label">Disk Bilgisi</span>
                     <span class="detail-value">${escapeHtml(server.disk_info || '-')}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>🌐 Network</h3>
+                <h3>🌐 Ağ</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Primary Network</span>
+                    <span class="detail-label">Birincil Ağ</span>
                     <span class="detail-value">${escapeHtml(server.network_primary || '-')}</span>
                 </div>
             </div>
@@ -472,31 +674,101 @@ async function showServerDetails(id) {
     showModal('serverDetailsModal');
 }
 
-// ==================== MODAL HELPERS ====================
+// ==================== SET CREDENTIALS MODAL ====================
 
-function closeAllModals() {
-    document.querySelectorAll('.modal.show').forEach(modal => {
-        modal.classList.remove('show');
-    });
-    document.body.style.overflow = '';
+function showSetCredsModal(serverId) {
+    const server = servers.find(s => s.id === serverId);
+    if (!server) return;
+    
+    const serverIdInput = document.getElementById('credServerId');
+    const serverInfo = document.getElementById('credServerInfo');
+    const usernameInput = document.getElementById('credUsername');
+    const passwordInput = document.getElementById('credPassword');
+    
+    if (serverIdInput) serverIdInput.value = serverId;
+    if (serverInfo) serverInfo.textContent = `Sunucu: ${server.ip} (${server.os_type})`;
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
+    
+    showModal('setCredsModal');
 }
 
+async function saveServerCredentials(event) {
+    event.preventDefault();
+    
+    const serverId = document.getElementById('credServerId').value;
+    const username = document.getElementById('credUsername').value.trim();
+    const password = document.getElementById('credPassword').value;
+    
+    if (!username || !password) {
+        showToast('Kullanıcı adı ve şifre giriniz', 'warning');
+        return;
+    }
+    
+    showLoading('Kaydediliyor...');
+    
+    try {
+        const data = await apiCall(`/api/servers/${serverId}/credentials`, {
+            method: 'PUT',
+            body: JSON.stringify({ username, password })
+        });
+        
+        hideLoading();
+        
+        if (data.success) {
+            showToast('Kimlik bilgileri kaydedildi!', 'success');
+            closeModal('setCredsModal');
+            await loadServers();
+        } else {
+            showToast(data.error || 'Kayıt başarısız', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Hata oluştu', 'error');
+    }
+}
+
+// ==================== MODAL HELPERS ====================
+
 function showModal(modalId) {
-    // Close any open modals first
-    closeAllModals();
+    // Don't open modal if confirm is showing
+    if (document.getElementById('confirmModal').classList.contains('show')) {
+        return;
+    }
+    
+    hideLoading();
+    
+    // Close other modals except confirm
+    document.querySelectorAll('.modal.show').forEach(modal => {
+        if (modal.id !== 'confirmModal') {
+            modal.classList.remove('show');
+        }
+    });
     
     const modal = document.getElementById(modalId);
     if (modal) {
+        const form = modal.querySelector('form');
+        if (form) form.reset();
+        
+        if (modalId === 'addServerModal') {
+            const customSection = document.getElementById('customCredsSection');
+            if (customSection) customSection.style.display = 'none';
+        }
+        
+        if (modalId === 'importModal') {
+            const textarea = document.getElementById('importContent');
+            if (textarea) textarea.value = '';
+        }
+        
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
         
-        // Focus first input in modal after a brief delay
         setTimeout(() => {
-            const firstInput = modal.querySelector('input:not([type="file"]), select');
+            const firstInput = modal.querySelector('input:not([type="file"]):not([type="hidden"]):not([type="checkbox"]), select, textarea');
             if (firstInput) {
                 firstInput.focus();
             }
-        }, 100);
+        }, 150);
     }
 }
 
@@ -504,39 +776,29 @@ function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.remove('show');
-        
-        // Reset any forms in the modal
-        const form = modal.querySelector('form');
-        if (form) {
-            form.reset();
-        }
     }
     
-    // Only restore body overflow if no modals are open
-    if (!document.querySelector('.modal.show')) {
+    const hasOpenModal = document.querySelector('.modal.show');
+    if (!hasOpenModal) {
         document.body.style.overflow = '';
     }
 }
 
+function showImportModal() {
+    showModal('importModal');
+}
+
 function showAddServerModal() {
-    // Reset form before showing
-    const form = document.getElementById('addServerForm');
-    if (form) form.reset();
-    
     showModal('addServerModal');
 }
 
-function showBulkImportModal() {
-    // Reset form before showing
-    const form = document.getElementById('bulkImportForm');
-    if (form) form.reset();
-    
-    showModal('bulkImportModal');
-}
-
-// Close modal when clicking outside (on backdrop)
+// Close modal when clicking outside
 document.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal') && e.target.classList.contains('show')) {
+        if (e.target.id === 'confirmModal') {
+            // Don't close confirm modal by clicking outside
+            return;
+        }
         closeModal(e.target.id);
     }
 });
@@ -544,6 +806,12 @@ document.addEventListener('click', (e) => {
 // Close modal with Escape key
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        const confirmModal = document.getElementById('confirmModal');
+        if (confirmModal && confirmModal.classList.contains('show')) {
+            handleConfirm(false);
+            return;
+        }
+        
         const openModal = document.querySelector('.modal.show');
         if (openModal) {
             closeModal(openModal.id);
@@ -553,19 +821,29 @@ document.addEventListener('keydown', (e) => {
 
 // ==================== LOADING ====================
 
-function showLoading(text = 'Loading...') {
-    document.getElementById('loadingText').textContent = text;
-    document.getElementById('loadingOverlay').classList.add('show');
+function showLoading(text = 'Yükleniyor...') {
+    if (isLoading) return;
+    isLoading = true;
+    
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    
+    if (loadingText) loadingText.textContent = text;
+    if (overlay) overlay.classList.add('show');
 }
 
 function hideLoading() {
-    document.getElementById('loadingOverlay').classList.remove('show');
+    isLoading = false;
+    
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) overlay.classList.remove('show');
 }
 
 // ==================== TOAST NOTIFICATIONS ====================
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
     
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
@@ -582,7 +860,6 @@ function showToast(message, type = 'info') {
     
     container.appendChild(toast);
     
-    // Remove toast after 4 seconds
     setTimeout(() => {
         toast.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => toast.remove(), 300);
@@ -594,12 +871,14 @@ function showToast(message, type = 'info') {
 function refreshServers() {
     loadServers();
     loadStats();
-    showToast('Data refreshed', 'info');
+    showToast('Veriler yenilendi', 'info');
 }
 
 function updateEmptyState() {
     const emptyState = document.getElementById('emptyState');
     const table = document.getElementById('serverTable');
+    
+    if (!emptyState || !table) return;
     
     if (filteredServers.length === 0) {
         emptyState.style.display = 'flex';
@@ -644,4 +923,3 @@ function truncateText(text, maxLength) {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
 }
-

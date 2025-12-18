@@ -4,6 +4,8 @@ Generates professional Excel reports with multiple sheets
 """
 
 import os
+import sys
+import tempfile
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -12,8 +14,15 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 
 
+def get_export_path():
+    """Get export directory - use temp folder in production, exports folder in dev"""
+    if getattr(sys, 'frozen', False):
+        # In production, use user's temp directory
+        return tempfile.gettempdir()
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), 'exports')
+
 # Export directory
-EXPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'exports')
+EXPORT_PATH = get_export_path()
 
 
 def ensure_export_directory():

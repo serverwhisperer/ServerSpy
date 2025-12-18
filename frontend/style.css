@@ -147,6 +147,52 @@ body::before {
     letter-spacing: 0.5px;
 }
 
+/* ==================== CREDENTIALS BAR ==================== */
+.credentials-bar {
+    display: flex;
+    gap: 30px;
+    padding: 15px 20px;
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.cred-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.cred-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.cred-section input {
+    padding: 8px 12px;
+    font-size: 13px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    width: 150px;
+}
+
+.cred-section input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.cred-status {
+    font-size: 12px;
+    color: var(--success);
+}
+
 /* ==================== TOOLBAR ==================== */
 .toolbar {
     display: flex;
@@ -531,6 +577,56 @@ select {
     max-width: 800px;
 }
 
+.modal-small {
+    max-width: 400px;
+}
+
+/* Confirm Modal Styles */
+.confirm-header {
+    background: linear-gradient(135deg, var(--danger), #dc2626);
+    border-bottom: none;
+}
+
+.confirm-header h2 {
+    color: white;
+}
+
+.confirm-message {
+    font-size: 15px;
+    color: var(--text-primary);
+    text-align: center;
+    padding: 20px 0;
+    line-height: 1.6;
+}
+
+.confirm-actions {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    padding-top: 10px;
+}
+
+.server-info-text {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    padding: 10px 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-family: monospace;
+    color: #60a5fa;
+}
+
+/* Credential clear button */
+.cred-section .btn-danger {
+    padding: 5px 10px;
+    min-width: auto;
+}
+
+.cred-section .btn-primary {
+    padding: 5px 10px;
+    min-width: auto;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;
@@ -590,10 +686,44 @@ select {
 }
 
 .form-group input:focus,
-.form-group select:focus {
+.form-group select:focus,
+.form-group textarea:focus {
     outline: none;
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.form-group textarea {
+    width: 100%;
+    padding: 12px 15px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    resize: vertical;
+}
+
+.checkbox-group {
+    margin: 15px 0;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-primary);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
 }
 
 .form-actions {
@@ -803,6 +933,63 @@ select {
     background: var(--text-muted);
 }
 
+/* ==================== SIGNATURE ==================== */
+.signature {
+    position: fixed;
+    bottom: 15px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(17, 24, 39, 0.8);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    z-index: 100;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.signature:hover {
+    opacity: 1;
+}
+
+.signature-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    filter: saturate(0.8) brightness(0.9);
+    transition: filter 0.3s ease;
+}
+
+.signature:hover .signature-logo {
+    filter: saturate(1) brightness(1);
+}
+
+.signature-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.signature-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    font-family: var(--font-mono);
+}
+
+.signature-link {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.signature-link:hover {
+    color: var(--accent-secondary);
+}
+
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 1200px) {
     .header {
@@ -846,6 +1033,25 @@ select {
     
     .modal-content {
         width: 95%;
+    }
+    
+    .signature {
+        bottom: 10px;
+        right: 10px;
+        padding: 6px 10px;
+    }
+    
+    .signature-logo {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .signature-name {
+        font-size: 11px;
+    }
+    
+    .signature-link {
+        font-size: 9px;
     }
 }
 

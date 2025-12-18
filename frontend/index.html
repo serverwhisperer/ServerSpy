@@ -32,14 +32,34 @@
             </div>
         </header>
 
+        <!-- Credentials Bar -->
+        <div class="credentials-bar">
+            <div class="cred-section">
+                <span class="cred-label">🪟 Windows (Domain):</span>
+                <input type="text" id="winUsername" placeholder="DOMAIN\username">
+                <input type="password" id="winPassword" placeholder="Password">
+                <button class="btn btn-sm btn-primary" onclick="saveCredentials('windows')">💾</button>
+                <button class="btn btn-sm btn-danger" onclick="clearCredentials('windows')" title="Temizle">✕</button>
+                <span class="cred-status" id="winCredStatus"></span>
+            </div>
+            <div class="cred-section">
+                <span class="cred-label">🐧 Linux:</span>
+                <input type="text" id="linuxUsername" placeholder="root">
+                <input type="password" id="linuxPassword" placeholder="Password">
+                <button class="btn btn-sm btn-primary" onclick="saveCredentials('linux')">💾</button>
+                <button class="btn btn-sm btn-danger" onclick="clearCredentials('linux')" title="Temizle">✕</button>
+                <span class="cred-status" id="linuxCredStatus"></span>
+            </div>
+        </div>
+
         <!-- Toolbar -->
         <div class="toolbar">
             <div class="toolbar-actions">
-                <button class="btn btn-primary" onclick="showAddServerModal()">
-                    <span class="btn-icon">➕</span> Add Server
+                <button class="btn btn-primary" onclick="showImportModal()">
+                    <span class="btn-icon">📁</span> Import TXT
                 </button>
-                <button class="btn btn-secondary" onclick="showBulkImportModal()">
-                    <span class="btn-icon">📁</span> Bulk Import
+                <button class="btn btn-secondary" onclick="showAddServerModal()">
+                    <span class="btn-icon">➕</span> Tek Sunucu Ekle
                 </button>
                 <button class="btn btn-success" onclick="scanAllServers()" id="btnScanAll">
                     <span class="btn-icon">🔄</span> Scan All
@@ -47,8 +67,8 @@
                 <button class="btn btn-info" onclick="exportExcel()">
                     <span class="btn-icon">📊</span> Export Excel
                 </button>
-                <button class="btn btn-secondary" onclick="refreshServers()">
-                    <span class="btn-icon">🔃</span> Refresh
+                <button class="btn btn-danger" onclick="clearAllServers()">
+                    <span class="btn-icon">🗑️</span> Temizle
                 </button>
             </div>
             <div class="toolbar-filters">
@@ -88,13 +108,12 @@
                     </tr>
                 </thead>
                 <tbody id="serverTableBody">
-                    <!-- Server rows will be inserted here -->
                 </tbody>
             </table>
             <div class="empty-state" id="emptyState" style="display: none;">
                 <span class="empty-icon">🖥️</span>
                 <h3>No servers found</h3>
-                <p>Add your first server to get started</p>
+                <p>Import a TXT file or add servers manually to get started</p>
             </div>
         </div>
 
@@ -105,64 +124,83 @@
         </div>
     </div>
 
-    <!-- Add Server Modal -->
-    <div class="modal" id="addServerModal">
+    <!-- Import TXT Modal -->
+    <div class="modal" id="importModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Add New Server</h2>
-                <button class="modal-close" onclick="closeModal('addServerModal')">&times;</button>
+                <h2>Import Server List</h2>
+                <button class="modal-close" onclick="closeModal('importModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="addServerForm" onsubmit="addServer(event)">
+                <div class="import-info">
+                    <p><strong>TXT Format:</strong></p>
+                    <code>192.168.1.10
+server01.domain.com
+192.168.1.20 W
+linuxserver.local L</code>
+                    <p class="example">W/L opsiyonel - belirtilmezse <strong>otomatik tespit</strong> edilir</p>
+                    <p class="example"># ile başlayan satırlar yorum olarak atlanır</p>
+                </div>
+                <form id="importForm" onsubmit="importServers(event)">
                     <div class="form-group">
-                        <label for="serverIP">IP Address *</label>
-                        <input type="text" id="serverIP" placeholder="192.168.1.100" required>
+                        <label for="importFile">Select TXT File</label>
+                        <input type="file" id="importFile" accept=".txt,.csv">
                     </div>
                     <div class="form-group">
-                        <label for="serverUsername">Username *</label>
-                        <input type="text" id="serverUsername" placeholder="Administrator" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="serverPassword">Password *</label>
-                        <input type="password" id="serverPassword" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="serverOS">Operating System *</label>
-                        <select id="serverOS" required>
-                            <option value="Windows">Windows</option>
-                            <option value="Linux">Linux</option>
-                        </select>
+                        <label>Or paste content:</label>
+                        <textarea id="importContent" rows="6" placeholder="192.168.1.10 W
+server01.domain.com W
+192.168.1.20 L"></textarea>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('addServerModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Add Server</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('importModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Import</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Bulk Import Modal -->
-    <div class="modal" id="bulkImportModal">
+    <!-- Add Server Modal -->
+    <div class="modal" id="addServerModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Bulk Import Servers</h2>
-                <button class="modal-close" onclick="closeModal('bulkImportModal')">&times;</button>
+                <h2>Add Single Server</h2>
+                <button class="modal-close" onclick="closeModal('addServerModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="import-info">
-                    <p>Upload a CSV file with the following columns:</p>
-                    <code>ip,username,password,os_type</code>
-                    <p class="example">Example: 192.168.1.100,Administrator,password123,Windows</p>
-                </div>
-                <form id="bulkImportForm" onsubmit="bulkImport(event)">
+                <form id="addServerForm" onsubmit="addServer(event)">
                     <div class="form-group">
-                        <label for="csvFile">Select CSV File</label>
-                        <input type="file" id="csvFile" accept=".csv" required>
+                        <label for="serverIP">IP Address / Hostname *</label>
+                        <input type="text" id="serverIP" placeholder="192.168.1.100 or server01.domain.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serverOS">Operating System</label>
+                        <select id="serverOS">
+                            <option value="">🔍 Auto-detect</option>
+                            <option value="Windows">🪟 Windows</option>
+                            <option value="Linux">🐧 Linux</option>
+                        </select>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="useCustomCreds" onchange="toggleCustomCreds()">
+                            Use custom credentials (DMZ/Special)
+                        </label>
+                    </div>
+                    <div id="customCredsSection" style="display: none;">
+                        <div class="form-group">
+                            <label for="serverUsername">Username</label>
+                            <input type="text" id="serverUsername" placeholder="Username">
+                        </div>
+                        <div class="form-group">
+                            <label for="serverPassword">Password</label>
+                            <input type="password" id="serverPassword">
+                        </div>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('bulkImportModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Import</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('addServerModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Server</button>
                     </div>
                 </form>
             </div>
@@ -177,7 +215,34 @@
                 <button class="modal-close" onclick="closeModal('serverDetailsModal')">&times;</button>
             </div>
             <div class="modal-body" id="serverDetailsContent">
-                <!-- Server details will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Set Credentials Modal -->
+    <div class="modal" id="setCredsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🔑 Sunucu Kimlik Bilgileri</h2>
+                <button class="modal-close" onclick="closeModal('setCredsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="setCredsForm" onsubmit="saveServerCredentials(event)">
+                    <input type="hidden" id="credServerId">
+                    <p id="credServerInfo" class="server-info-text"></p>
+                    <div class="form-group">
+                        <label for="credUsername">Kullanıcı Adı</label>
+                        <input type="text" id="credUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="credPassword">Şifre</label>
+                        <input type="password" id="credPassword" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('setCredsModal')">İptal</button>
+                        <button type="submit" class="btn btn-primary">Kaydet</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -185,7 +250,31 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- Custom Confirm Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header confirm-header">
+                <h2 id="confirmTitle">⚠️ Onay</h2>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" class="confirm-message"></p>
+                <div class="confirm-actions">
+                    <button class="btn btn-secondary" onclick="handleConfirm(false)">İptal</button>
+                    <button class="btn btn-danger" id="confirmYesBtn" onclick="handleConfirm(true)">Evet, Sil</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature / Credits -->
+    <div class="signature">
+        <img src="logo.png" alt="ServerWhisperer" class="signature-logo">
+        <div class="signature-text">
+            <span class="signature-name">serverwhisperer</span>
+            <a href="https://github.com/serverwhisperer" target="_blank" class="signature-link">github.com/serverwhisperer</a>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
-
