@@ -41,22 +41,34 @@ function checkServer() {
     });
 }
 
-// Wait for the server to start (Promise-based)
+// Wait for the server to start (Promise-based, with proper error handling)
 function waitForServer(maxAttempts = 30) {
     return new Promise((resolve) => {
         let attempts = 0;
 
-        const check = async () => {
+        const check = () => {
             attempts++;
-            const isRunning = await checkServer();
             
-            if (isRunning) {
-                resolve(true);
-            } else if (attempts < maxAttempts) {
-                setTimeout(check, 500);
-            } else {
-                resolve(false);
-            }
+            // Properly handle the async operation with .then/.catch
+            checkServer()
+                .then((isRunning) => {
+                    if (isRunning) {
+                        resolve(true);
+                    } else if (attempts < maxAttempts) {
+                        setTimeout(check, 500);
+                    } else {
+                        resolve(false);
+                    }
+                })
+                .catch((error) => {
+                    // On error, treat as "not running" and continue retrying
+                    console.error(`Server check attempt ${attempts} failed:`, error.message);
+                    if (attempts < maxAttempts) {
+                        setTimeout(check, 500);
+                    } else {
+                        resolve(false);
+                    }
+                });
         };
 
         check();
@@ -103,13 +115,17 @@ function startFlaskServer() {
         });
 
         // Wait for server to be ready
-        waitForServer().then((isRunning) => {
-            if (isRunning) {
-                resolve();
-            } else {
-                reject(new Error('Server failed to start within timeout period'));
-            }
-        });
+        waitForServer()
+            .then((isRunning) => {
+                if (isRunning) {
+                    resolve();
+                } else {
+                    reject(new Error('Server failed to start within timeout period'));
+                }
+            })
+            .catch((error) => {
+                reject(error);
+            });
     });
 }
 
@@ -152,7 +168,7 @@ function handleStartupError(error) {
     app.quit();
 }
 
-// App ready event - Now properly handles async errors
+// App ready event - Properly handles async errors
 app.whenReady().then(async () => {
     try {
         // Check if server is already running
@@ -196,8 +212,12 @@ app.on('before-quit', () => {
     }
 });
 
-// Handle uncaught promise rejections
+// Handle uncaught promise rejections (safety net, should rarely trigger now)
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    handleStartupError(reason instanceof Error ? reason : new Error(String(reason)));
+    // Log but don't immediately quit - let the app try to recover if possible
+    if (!mainWindow) {
+        // Only quit if we haven't created the window yet (startup failure)
+        handleStartupError(reason instanceof Error ? reason : new Error(String(reason)));
+    }
 });
