@@ -222,14 +222,23 @@ class LinuxScanner:
         """Perform full scan of Linux server"""
         data = {}
         
-        # Hostname
-        data['hostname'] = self.run_command('hostname')
+        # Hostname - try multiple methods
+        hostname = self.run_command('hostname 2>/dev/null')
+        if not hostname:
+            hostname = self.run_command('cat /etc/hostname 2>/dev/null')
+        if not hostname:
+            hostname = self.run_command('uname -n 2>/dev/null')
+        if not hostname:
+            hostname = self.run_command('hostnamectl --static 2>/dev/null')
+        data['hostname'] = hostname.strip() if hostname else self.ip
         
         # Domain
         domain = self.run_command('dnsdomainname 2>/dev/null')
         if not domain:
             domain = self.run_command('hostname -d 2>/dev/null')
-        data['domain'] = domain or 'N/A'
+        if not domain:
+            domain = self.run_command('cat /etc/resolv.conf 2>/dev/null | grep "^search" | awk \'{print $2}\'')
+        data['domain'] = domain.strip() if domain else 'N/A'
         
         # Brand/Model/Serial (requires root/sudo for dmidecode)
         data['brand'] = self.run_command('sudo dmidecode -s system-manufacturer 2>/dev/null') or 'N/A'

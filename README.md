@@ -136,9 +136,34 @@ ip,username,password,os_type
 192.168.1.20,root,secretpass,Linux
 ```
 
-## 🏗️ Building Executable
+## 🖥️ Electron Desktop App
 
-To create a standalone executable:
+For a native desktop experience, you can run ServerScout as an Electron app:
+
+### Prerequisites
+- Node.js 18+ (download from https://nodejs.org)
+- Python dependencies already installed
+
+### Run as Electron App
+```bash
+cd electron
+npm install
+npm start
+```
+
+Or simply double-click `electron/start-electron.bat`
+
+### Build Electron Installer
+```bash
+cd electron
+npm run build
+```
+
+Output will be in `electron/dist/`
+
+## 🏗️ Building PyInstaller Executable
+
+To create a standalone executable (without Electron):
 
 ```bash
 # Run build script

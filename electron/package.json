@@ -1,0 +1,49 @@
+{
+  "name": "serverscout",
+  "version": "1.0.0",
+  "description": "Server Inventory Management Tool",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "ServerWhisperer",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.serverwhisperer.serverscout",
+    "productName": "ServerScout",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["**/*", "!__pycache__/**"]
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../data",
+        "to": "data",
+        "filter": ["**/*"]
+      }
+    ]
+  }
+}
+
