@@ -1,7 +1,6 @@
 const { app, BrowserWindow, shell, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
-const http = require('http');
 
 let mainWindow;
 let pythonProcess;
@@ -15,64 +14,9 @@ function getResourcePath(relativePath) {
     return path.join(__dirname, '..', relativePath);
 }
 
-// Check if the Flask server is running (Promise-based)
-function checkServer() {
-    return new Promise((resolve) => {
-        const options = {
-            host: 'localhost',
-            port: PORT,
-            timeout: 2000
-        };
-
-        const req = http.request(options, (res) => {
-            resolve(true);
-        });
-
-        req.on('error', () => {
-            resolve(false);
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            resolve(false);
-        });
-
-        req.end();
-    });
-}
-
-// Wait for the server to start (Promise-based, with proper error handling)
-function waitForServer(maxAttempts = 30) {
-    return new Promise((resolve) => {
-        let attempts = 0;
-
-        const check = () => {
-            attempts++;
-            
-            // Properly handle the async operation with .then/.catch
-            checkServer()
-                .then((isRunning) => {
-                    if (isRunning) {
-                        resolve(true);
-                    } else if (attempts < maxAttempts) {
-                        setTimeout(check, 500);
-                    } else {
-                        resolve(false);
-                    }
-                })
-                .catch((error) => {
-                    // On error, treat as "not running" and continue retrying
-                    console.error(`Server check attempt ${attempts} failed:`, error.message);
-                    if (attempts < maxAttempts) {
-                        setTimeout(check, 500);
-                    } else {
-                        resolve(false);
-                    }
-                });
-        };
-
-        check();
-    });
+// Simple delay function
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Start the Flask server
@@ -92,12 +36,28 @@ function startFlaskServer() {
             stdio: ['ignore', 'pipe', 'pipe']
         });
 
+        let serverStarted = false;
+
         pythonProcess.stdout.on('data', (data) => {
-            console.log(`Flask: ${data}`);
+            const output = data.toString();
+            console.log(`Flask: ${output}`);
+            
+            // Detect when Flask is ready
+            if (output.includes('Running on') && !serverStarted) {
+                serverStarted = true;
+                resolve();
+            }
         });
 
         pythonProcess.stderr.on('data', (data) => {
-            console.error(`Flask Error: ${data}`);
+            const output = data.toString();
+            console.log(`Flask: ${output}`);
+            
+            // Flask also outputs "Running on" to stderr sometimes
+            if (output.includes('Running on') && !serverStarted) {
+                serverStarted = true;
+                resolve();
+            }
         });
 
         pythonProcess.on('error', (err) => {
@@ -107,25 +67,18 @@ function startFlaskServer() {
 
         pythonProcess.on('close', (code) => {
             console.log(`Flask process exited with code ${code}`);
-            if (code !== 0 && code !== null && mainWindow) {
-                // Server crashed, show error
-                dialog.showErrorBox('Server Error', 
-                    'The backend server has stopped unexpectedly. Please restart the application.');
+            if (!serverStarted && code !== 0) {
+                reject(new Error(`Flask exited with code ${code}`));
             }
         });
 
-        // Wait for server to be ready
-        waitForServer()
-            .then((isRunning) => {
-                if (isRunning) {
-                    resolve();
-                } else {
-                    reject(new Error('Server failed to start within timeout period'));
-                }
-            })
-            .catch((error) => {
-                reject(error);
-            });
+        // Fallback timeout - if no "Running on" detected in 10 seconds, assume it's ready
+        setTimeout(() => {
+            if (!serverStarted) {
+                serverStarted = true;
+                resolve();
+            }
+        }, 10000);
     });
 }
 
@@ -168,18 +121,14 @@ function handleStartupError(error) {
     app.quit();
 }
 
-// App ready event - Properly handles async errors
+// App ready event
 app.whenReady().then(async () => {
     try {
-        // Check if server is already running
-        const isRunning = await checkServer();
+        console.log('Starting Flask server...');
+        await startFlaskServer();
         
-        if (!isRunning) {
-            console.log('Starting Flask server...');
-            await startFlaskServer();
-        } else {
-            console.log('Flask server already running');
-        }
+        // Small delay to ensure server is fully ready
+        await delay(500);
         
         createWindow();
     } catch (error) {
@@ -209,15 +158,5 @@ app.on('activate', () => {
 app.on('before-quit', () => {
     if (pythonProcess) {
         pythonProcess.kill();
-    }
-});
-
-// Handle uncaught promise rejections (safety net, should rarely trigger now)
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    // Log but don't immediately quit - let the app try to recover if possible
-    if (!mainWindow) {
-        // Only quit if we haven't created the window yet (startup failure)
-        handleStartupError(reason instanceof Error ? reason : new Error(String(reason)));
     }
 });

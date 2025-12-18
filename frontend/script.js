@@ -474,42 +474,80 @@ async function showServerDetails(id) {
 
 // ==================== MODAL HELPERS ====================
 
+function closeAllModals() {
+    document.querySelectorAll('.modal.show').forEach(modal => {
+        modal.classList.remove('show');
+    });
+    document.body.style.overflow = '';
+}
+
 function showModal(modalId) {
+    // Close any open modals first
+    closeAllModals();
+    
     const modal = document.getElementById(modalId);
-    modal.classList.add('show');
-    document.body.style.overflow = 'hidden';
+    if (modal) {
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        
+        // Focus first input in modal after a brief delay
+        setTimeout(() => {
+            const firstInput = modal.querySelector('input:not([type="file"]), select');
+            if (firstInput) {
+                firstInput.focus();
+            }
+        }, 100);
+    }
 }
 
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
-    modal.classList.remove('show');
-    document.body.style.overflow = '';
+    if (modal) {
+        modal.classList.remove('show');
+        
+        // Reset any forms in the modal
+        const form = modal.querySelector('form');
+        if (form) {
+            form.reset();
+        }
+    }
+    
+    // Only restore body overflow if no modals are open
+    if (!document.querySelector('.modal.show')) {
+        document.body.style.overflow = '';
+    }
 }
 
 function showAddServerModal() {
+    // Reset form before showing
+    const form = document.getElementById('addServerForm');
+    if (form) form.reset();
+    
     showModal('addServerModal');
-    document.getElementById('serverIP').focus();
 }
 
 function showBulkImportModal() {
+    // Reset form before showing
+    const form = document.getElementById('bulkImportForm');
+    if (form) form.reset();
+    
     showModal('bulkImportModal');
 }
 
-// Close modal when clicking outside
+// Close modal when clicking outside (on backdrop)
 document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
-        e.target.classList.remove('show');
-        document.body.style.overflow = '';
+    if (e.target.classList.contains('modal') && e.target.classList.contains('show')) {
+        closeModal(e.target.id);
     }
 });
 
 // Close modal with Escape key
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-        document.querySelectorAll('.modal.show').forEach(modal => {
-            modal.classList.remove('show');
-        });
-        document.body.style.overflow = '';
+        const openModal = document.querySelector('.modal.show');
+        if (openModal) {
+            closeModal(openModal.id);
+        }
     }
 });
 
