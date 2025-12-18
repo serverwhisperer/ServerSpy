@@ -15,48 +15,52 @@ function getResourcePath(relativePath) {
     return path.join(__dirname, '..', relativePath);
 }
 
-// Check if the Flask server is running
-function checkServer(callback) {
-    const options = {
-        host: 'localhost',
-        port: PORT,
-        timeout: 2000
-    };
+// Check if the Flask server is running (Promise-based)
+function checkServer() {
+    return new Promise((resolve) => {
+        const options = {
+            host: 'localhost',
+            port: PORT,
+            timeout: 2000
+        };
 
-    const req = http.request(options, (res) => {
-        callback(true);
+        const req = http.request(options, (res) => {
+            resolve(true);
+        });
+
+        req.on('error', () => {
+            resolve(false);
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            resolve(false);
+        });
+
+        req.end();
     });
-
-    req.on('error', () => {
-        callback(false);
-    });
-
-    req.on('timeout', () => {
-        req.destroy();
-        callback(false);
-    });
-
-    req.end();
 }
 
-// Wait for the server to start
-function waitForServer(callback, maxAttempts = 30) {
-    let attempts = 0;
+// Wait for the server to start (Promise-based)
+function waitForServer(maxAttempts = 30) {
+    return new Promise((resolve) => {
+        let attempts = 0;
 
-    const check = () => {
-        attempts++;
-        checkServer((isRunning) => {
+        const check = async () => {
+            attempts++;
+            const isRunning = await checkServer();
+            
             if (isRunning) {
-                callback(true);
+                resolve(true);
             } else if (attempts < maxAttempts) {
                 setTimeout(check, 500);
             } else {
-                callback(false);
+                resolve(false);
             }
-        });
-    };
+        };
 
-    check();
+        check();
+    });
 }
 
 // Start the Flask server
@@ -67,14 +71,8 @@ function startFlaskServer() {
 
         console.log('Starting Flask server from:', appPath);
 
-        // Try to find Python
-        const pythonCommands = ['python', 'python3', 'py'];
-        let pythonCmd = 'python';
-
         // On Windows, prefer 'python' or 'py'
-        if (process.platform === 'win32') {
-            pythonCmd = 'python';
-        }
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
         pythonProcess = spawn(pythonCmd, [appPath], {
             cwd: backendPath,
@@ -97,7 +95,7 @@ function startFlaskServer() {
 
         pythonProcess.on('close', (code) => {
             console.log(`Flask process exited with code ${code}`);
-            if (code !== 0 && code !== null) {
+            if (code !== 0 && code !== null && mainWindow) {
                 // Server crashed, show error
                 dialog.showErrorBox('Server Error', 
                     'The backend server has stopped unexpectedly. Please restart the application.');
@@ -105,11 +103,11 @@ function startFlaskServer() {
         });
 
         // Wait for server to be ready
-        waitForServer((isRunning) => {
+        waitForServer().then((isRunning) => {
             if (isRunning) {
                 resolve();
             } else {
-                reject(new Error('Server failed to start'));
+                reject(new Error('Server failed to start within timeout period'));
             }
         });
     });
@@ -146,24 +144,30 @@ function createWindow() {
     });
 }
 
-// App ready event
+// Show error dialog and quit
+function handleStartupError(error) {
+    console.error('Failed to start application:', error);
+    dialog.showErrorBox('Startup Error', 
+        `Failed to start the application: ${error.message}\n\nMake sure Python is installed and all dependencies are available.`);
+    app.quit();
+}
+
+// App ready event - Now properly handles async errors
 app.whenReady().then(async () => {
     try {
         // Check if server is already running
-        checkServer(async (isRunning) => {
-            if (!isRunning) {
-                console.log('Starting Flask server...');
-                await startFlaskServer();
-            } else {
-                console.log('Flask server already running');
-            }
-            createWindow();
-        });
+        const isRunning = await checkServer();
+        
+        if (!isRunning) {
+            console.log('Starting Flask server...');
+            await startFlaskServer();
+        } else {
+            console.log('Flask server already running');
+        }
+        
+        createWindow();
     } catch (error) {
-        console.error('Failed to start application:', error);
-        dialog.showErrorBox('Startup Error', 
-            `Failed to start the application: ${error.message}\n\nMake sure Python is installed and all dependencies are available.`);
-        app.quit();
+        handleStartupError(error);
     }
 });
 
@@ -192,3 +196,8 @@ app.on('before-quit', () => {
     }
 });
 
+// Handle uncaught promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    handleStartupError(reason instanceof Error ? reason : new Error(String(reason)));
+});
