@@ -47,14 +47,15 @@ ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri i
 
 **Windows Ortamı:**
 - Key, **Windows DPAPI (Data Protection API)** ile korunur
-- Key dosyası: `%APPDATA%\ServerScout\data\.encryption_key`
 - Key, sadece aynı Windows kullanıcı hesabı tarafından decrypt edilebilir
 - **Avantaj:** Key, Windows kullanıcı profili ile bağlantılıdır
+- **Güvenlik:** Key dosyası kullanıcı profilinde güvenli bir konumda saklanır
 
 **Linux/Mac Ortamı:**
 - Key, sistem-specific master key ile şifrelenir
-- Master key: Kullanıcı adı + hostname bazlı
-- Key dosyası: `data/.encryption_key` (600 permissions)
+- Master key, kullanıcı ve sistem bilgilerinden türetilir
+- Key dosyası sadece owner tarafından okunabilir (600 permissions)
+- **Güvenlik:** Key, sistem ve kullanıcıya özgüdür
 
 ### 3. Memory Güvenliği
 
@@ -93,8 +94,8 @@ ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri i
 **Özellik:** Database dosyasına erişim kontrolü.
 
 **Konumlar:**
-- **Development:** `data/inventory.db`
-- **Production:** `%APPDATA%\ServerScout\data\inventory.db`
+- **Development:** Uygulama dizininde geçici database
+- **Production:** Kullanıcı profilinde güvenli konum
 
 **Koruma:**
 - Database dosyası sadece uygulama tarafından yazılır
@@ -130,11 +131,9 @@ ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri i
 - ✅ Browser'da "Advanced" > "Continue" ile geçilebilir (localhost için normal)
 
 **Production Deployment:**
-```python
-# app.py'de gerçek SSL sertifikası kullanımı:
-app.run(host='127.0.0.1', port=5000, 
-        ssl_context=('/path/to/cert.pem', '/path/to/key.pem'))
-```
+- Production'da gerçek SSL sertifikası kullanılmalıdır
+- Self-signed certificate sadece localhost/development için uygundur
+- SSL sertifikası konfigürasyonu için `app.py` dosyasına bakın
 
 ### 2. Localhost Binding
 
@@ -280,11 +279,9 @@ python backend/app.py
 ```
 
 **Production için Gerçek SSL Sertifikası:**
-```python
-# app.py'de ssl_context parametresini değiştirin:
-app.run(host='127.0.0.1', port=5000, 
-        ssl_context=('/path/to/cert.pem', '/path/to/key.pem'))
-```
+- Production'da mutlaka gerçek SSL sertifikası kullanın
+- Let's Encrypt veya kurumsal sertifika kullanılabilir
+- SSL sertifikası konfigürasyonu için `app.py` dosyasına bakın
 
 **Not:** Production'da mutlaka gerçek SSL sertifikası kullanın. Self-signed certificate sadece localhost/development için uygundur.
 
@@ -372,45 +369,21 @@ app.run(host='127.0.0.1', port=5000,
 8. API response'unda password alanı kaldırılır (sanitize_server_data)
 ```
 
-### Key Yönetimi Detayları
+### Key Yönetimi Prensibi
 
-**Windows DPAPI Kullanımı:**
-```python
-# Key oluşturma
-key = Fernet.generate_key()  # 32-byte random key
+**Windows Ortamı:**
+- Encryption key, Windows DPAPI (Data Protection API) ile korunur
+- Key, sadece aynı Windows kullanıcı hesabı tarafından decrypt edilebilir
+- Key dosyası kullanıcı profilinde saklanır
+- **Güvenlik:** Key, Windows kullanıcı kimlik doğrulamasına bağlıdır
 
-# Key'i DPAPI ile şifreleme
-encrypted_key = win32crypt.CryptProtectData(
-    key,
-    "ServerScout Encryption Key",
-    None, None, None, 0
-)
+**Linux/Mac Ortamı:**
+- Encryption key, sistem-specific master key ile şifrelenir
+- Master key, kullanıcı ve sistem bilgilerinden türetilir
+- Key dosyası sadece owner tarafından okunabilir (600 permissions)
+- **Güvenlik:** Key, sistem ve kullanıcıya özgüdür
 
-# Key dosyasına kaydetme
-# Konum: %APPDATA%\ServerScout\data\.encryption_key
-
-# Key'i decrypt etme
-decrypted_key = win32crypt.CryptUnprotectData(
-    encrypted_key, None, None, None, 0
-)[1]
-```
-
-**Linux/Mac Master Key:**
-```python
-# Master key oluşturma
-salt = f"{username}{hostname}".encode()
-kdf = PBKDF2HMAC(
-    algorithm=hashes.SHA256(),
-    length=32,
-    salt=salt,
-    iterations=100000
-)
-master_key = kdf.derive(b"ServerScoutMasterKey")
-
-# Key'i master key ile şifreleme
-fernet = Fernet(master_key)
-encrypted_key = fernet.encrypt(encryption_key)
-```
+**Not:** Detaylı implementation bilgileri güvenlik nedeniyle paylaşılmamaktadır.
 
 ### Güvenlik Katmanları
 
@@ -436,44 +409,33 @@ Layer 6: Temporary Data (Data Lifecycle)
 ### Test Senaryoları
 
 **1. Database Dosyası Erişimi Testi:**
-```bash
-# Database dosyasını kopyala
-cp %APPDATA%\ServerScout\data\inventory.db test.db
-
-# SQLite ile aç
-sqlite3 test.db
-SELECT password FROM servers;
-
-# Sonuç: Şifreli string görülür, decrypt edilemez (key olmadan)
-```
+- Database dosyasına erişim sağlansa bile, şifreler şifreli format'ta saklanır
+- Encryption key olmadan şifreler decrypt edilemez
+- **Sonuç:** Database ele geçirilse bile şifreler korunur
 
 **2. Key Dosyası Erişimi Testi:**
-```bash
-# Key dosyasını başka bilgisayara kopyala
-# Sonuç: Decrypt edilemez (Windows DPAPI farklı kullanıcı)
-```
+- Key dosyası başka bir sisteme kopyalansa bile decrypt edilemez
+- Windows DPAPI: Key, kullanıcı hesabına bağlıdır
+- Linux/Mac: Key, sistem ve kullanıcıya özgüdür
+- **Sonuç:** Key dosyası tek başına yeterli değildir
 
 **3. API Response Testi:**
-```bash
-# API'den server bilgisi al
-curl https://localhost:5000/api/servers/1
-
-# Sonuç: Password alanı yok, sadece has_password boolean
-```
+- API response'larında password alanı bulunmaz
+- Sadece `has_password` boolean flag'i gönderilir
+- **Sonuç:** API trafiği güvenlidir
 
 **4. Memory Dump Testi:**
-```bash
-# Process memory dump al
-# Sonuç: Default credentials şifreli format'ta
-```
+- Process memory dump alınsa bile, default credentials şifreli format'ta saklanır
+- **Sonuç:** Memory dump ile şifreler okunamaz
 
 ## 📞 Destek ve Sorular
 
 Güvenlik ile ilgili sorularınız için:
-- **Teknik Dokümantasyon:** `backend/encryption.py`
-- **Database Modülü:** `backend/database.py`
-- **API Güvenliği:** `backend/app.py`
-- **Key Açıklaması:** `ENCRYPTION-KEY-EXPLANATION.md`
+- **Genel Güvenlik:** Bu dokümantasyon
+- **Key Yönetimi:** `ENCRYPTION-KEY-EXPLANATION.md`
+- **Database Kullanımı:** `DATABASE-EXPLANATION.md`
+
+**Not:** Detaylı implementation kodları ve güvenlik mekanizmaları güvenlik nedeniyle paylaşılmamaktadır. Güvenlik soruları için lütfen proje maintainer'ları ile iletişime geçin.
 
 ---
 
