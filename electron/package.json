@@ -1,13 +1,14 @@
 {
   "name": "serverscout",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Server Inventory Management Tool - Developed by Fatih Tunahan Sakin",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:portable": "electron-builder --win portable"
+    "build:win": "electron-builder --win --x64",
+    "build:portable": "electron-builder --win portable --x64",
+    "build:all": "npm run build:portable && npm run build:win"
   },
   "author": {
     "name": "Fatih Tunahan Sakin",
@@ -42,6 +43,7 @@
       "legalTrademarks": "ServerScout by Fatih Tunahan Sakin"
     },
     "nsis": {
+      "artifactName": "ServerScout-Setup-${version}.exe",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -50,18 +52,17 @@
       "shortcutName": "ServerScout",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
-      "license": "license.txt",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": true
     },
     "portable": {
-      "artifactName": "ServerScout-Portable-${version}.exe"
+      "artifactName": "ServerScout-Portable-${version}.exe",
+      "requestExecutionLevel": "user"
     },
     "extraResources": [
       {
-        "from": "../backend/dist/serverscout-backend",
-        "to": "backend",
-        "filter": ["**/*"]
+        "from": "../backend/dist/serverscout-backend.exe",
+        "to": "backend/serverscout-backend.exe"
       },
       {
         "from": "../frontend",

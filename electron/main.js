@@ -53,9 +53,17 @@ function startBackendServer() {
             console.log('Starting backend from Python:', appPath);
         }
 
+        // Get frontend path for backend
+        const frontendPath = getResourcePath('frontend');
+        
         backendProcess = spawn(cmd, args, {
             cwd: backendPath,
-            env: { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_RUN: '1' },
+            env: { 
+                ...process.env, 
+                PYTHONUNBUFFERED: '1', 
+                ELECTRON_RUN: '1',
+                FRONTEND_PATH: frontendPath  // Pass frontend path to backend
+            },
             stdio: ['ignore', 'pipe', 'pipe'],
             // Important for Windows exe
             windowsHide: true
@@ -154,6 +162,28 @@ function createWindow() {
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
+    });
+
+    // Handle page load errors
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+        console.error('Page load failed:', errorCode, errorDescription, validatedURL);
+        if (errorCode === -106) {
+            // ERR_INTERNET_DISCONNECTED or connection refused
+            dialog.showErrorBox(
+                'Connection Error',
+                `Cannot connect to backend server at http://localhost:${PORT}\n\n` +
+                `Error: ${errorDescription}\n\n` +
+                `Please check:\n` +
+                `1. Backend server is running\n` +
+                `2. Port ${PORT} is not blocked\n` +
+                `3. Check console for backend errors`
+            );
+        }
+    });
+
+    // Log console messages from renderer
+    mainWindow.webContents.on('console-message', (event, level, message) => {
+        console.log(`[Renderer ${level}]:`, message);
     });
 
     mainWindow.on('closed', () => {

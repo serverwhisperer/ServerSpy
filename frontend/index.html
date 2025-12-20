@@ -16,6 +16,11 @@
                 <h1>ServerScout</h1>
                 <span class="logo-subtitle">Server Inventory Management</span>
             </div>
+            <div class="header-actions">
+                <button class="btn btn-management" onclick="showCompareModal()">
+                    <span class="btn-icon">📊</span> Report Comparison
+                </button>
+            </div>
             <div class="header-stats" id="headerStats">
                 <div class="stat-item">
                     <span class="stat-value" id="statTotal">0</span>
@@ -52,6 +57,21 @@
             </div>
         </div>
 
+        <!-- Project Selector Bar -->
+        <div class="project-bar">
+            <div class="project-selector">
+                <span class="project-label">📂 Proje:</span>
+                <select id="projectSelect" onchange="onProjectChange()">
+                    <option value="">Tüm Projeler</option>
+                </select>
+                <button class="btn btn-sm btn-primary" onclick="showNewProjectModal()" title="Yeni Proje">➕</button>
+                <button class="btn btn-sm btn-secondary" onclick="showManageProjectsModal()" title="Projeleri Yönet">⚙️</button>
+            </div>
+            <div class="project-stats" id="projectStats">
+                <span id="projectServerCount"></span>
+            </div>
+        </div>
+
         <!-- Toolbar -->
         <div class="toolbar">
             <div class="toolbar-actions">
@@ -64,7 +84,7 @@
                 <button class="btn btn-success" onclick="scanAllServers()" id="btnScanAll">
                     <span class="btn-icon">🔄</span> Scan All
                 </button>
-                <button class="btn btn-info" onclick="exportExcel()">
+                <button class="btn btn-info" onclick="showExportModal()">
                     <span class="btn-icon">📊</span> Export Excel
                 </button>
                 <button class="btn btn-danger" onclick="clearAllServers()">
@@ -96,6 +116,7 @@
                     <tr>
                         <th onclick="sortTable('hostname')">Hostname <span class="sort-icon">⇅</span></th>
                         <th onclick="sortTable('ip')">IP Address <span class="sort-icon">⇅</span></th>
+                        <th onclick="sortTable('project_name')">Project <span class="sort-icon">⇅</span></th>
                         <th onclick="sortTable('os_type')">OS <span class="sort-icon">⇅</span></th>
                         <th onclick="sortTable('brand')">Brand</th>
                         <th onclick="sortTable('model')">Model</th>
@@ -243,6 +264,240 @@ server01.domain.com W
                         <button type="submit" class="btn btn-primary">Kaydet</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    <div class="modal" id="newProjectModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📂 Yeni Proje Oluştur</h2>
+                <button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="newProjectForm" onsubmit="createProject(event)">
+                    <div class="form-group">
+                        <label for="projectName">Proje Adı *</label>
+                        <input type="text" id="projectName" placeholder="Örn: Datacenter-A, Web Sunucuları..." required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('newProjectModal')">İptal</button>
+                        <button type="submit" class="btn btn-primary">Oluştur</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Projects Modal -->
+    <div class="modal" id="manageProjectsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>⚙️ Proje Yönetimi</h2>
+                <button class="modal-close" onclick="closeModal('manageProjectsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="projects-list" id="projectsList">
+                    <!-- Projects will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal" id="exportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 Excel Export</h2>
+                <button class="modal-close" onclick="closeModal('exportModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="export-options">
+                    <div class="export-option" onclick="exportCurrentProject()">
+                        <span class="export-icon">📄</span>
+                        <div class="export-info">
+                            <h4>Seçili Projeyi Export Et</h4>
+                            <p id="exportCurrentProjectName">Tüm sunucular</p>
+                        </div>
+                    </div>
+                    <div class="export-option" onclick="exportAllProjects()">
+                        <span class="export-icon">📚</span>
+                        <div class="export-info">
+                            <h4>Tüm Projeleri Export Et</h4>
+                            <p>Her proje ayrı sheet, karşılaştırmalı özet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assign Project Modal -->
+    <div class="modal" id="assignProjectModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📂 Projeye Ata</h2>
+                <button class="modal-close" onclick="closeModal('assignProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="assignProjectForm" onsubmit="assignSelectedToProject(event)">
+                    <input type="hidden" id="assignServerId">
+                    <p id="assignServerInfo" class="server-info-text"></p>
+                    <div class="form-group">
+                        <label for="assignProjectSelect">Proje Seçin</label>
+                        <select id="assignProjectSelect">
+                            <option value="">(Projesiz)</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('assignProjectModal')">İptal</button>
+                        <button type="submit" class="btn btn-primary">Ata</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Compare Modal -->
+    <div class="modal" id="compareModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>📊 Report Comparison Tool</h2>
+                <button class="modal-close" onclick="closeModal('compareModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="compare-tabs">
+                    <button class="compare-tab active" onclick="switchCompareTab('scan-hpsm')">Scan vs HPSM</button>
+                    <button class="compare-tab" onclick="switchCompareTab('scan-zabbix')">Scan vs Zabbix</button>
+                    <button class="compare-tab" onclick="switchCompareTab('hpsm-zabbix')">HPSM vs Zabbix</button>
+                    <button class="compare-tab" onclick="switchCompareTab('full')">Full Comparison (3-Way)</button>
+                </div>
+                
+                <!-- Scan vs HPSM -->
+                <div class="compare-tab-content active" id="tab-scan-hpsm">
+                    <div class="compare-info">
+                        <p>Compare server scan report hostnames with HPSM inventory.</p>
+                        <p class="example">Identifies missing records between systems.</p>
+                    </div>
+                    <form onsubmit="compareReports(event, 'scan-hpsm')">
+                        <div class="compare-files">
+                            <div class="compare-file-section">
+                                <h4>📋 Scan Report</h4>
+                                <p class="file-hint">Exported Excel file (Hostname column)</p>
+                                <input type="file" id="scanFile1" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="compare-divider"><span>VS</span></div>
+                            <div class="compare-file-section">
+                                <h4>📑 HPSM Report</h4>
+                                <p class="file-hint">HPSM export (SERIAL_NO_ column)</p>
+                                <input type="file" id="hpsmFile1" accept=".xlsx,.xls" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeModal('compareModal')">Cancel</button>
+                            <button type="submit" class="btn btn-management">🔍 Compare</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Scan vs Zabbix -->
+                <div class="compare-tab-content" id="tab-scan-zabbix">
+                    <div class="compare-info">
+                        <p>Compare server scan report hostnames with Zabbix monitoring.</p>
+                        <p class="example">Identifies servers not being monitored.</p>
+                    </div>
+                    <form onsubmit="compareReports(event, 'scan-zabbix')">
+                        <div class="compare-files">
+                            <div class="compare-file-section">
+                                <h4>📋 Scan Report</h4>
+                                <p class="file-hint">Exported Excel file (Hostname column)</p>
+                                <input type="file" id="scanFile2" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="compare-divider"><span>VS</span></div>
+                            <div class="compare-file-section">
+                                <h4>📈 Zabbix Report</h4>
+                                <p class="file-hint">Zabbix export (Host column)</p>
+                                <input type="file" id="zabbixFile1" accept=".xlsx,.xls" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeModal('compareModal')">Cancel</button>
+                            <button type="submit" class="btn btn-management">🔍 Compare</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- HPSM vs Zabbix -->
+                <div class="compare-tab-content" id="tab-hpsm-zabbix">
+                    <div class="compare-info">
+                        <p>Compare HPSM inventory with Zabbix monitoring directly.</p>
+                        <p class="example">Identifies discrepancies between inventory and monitoring systems.</p>
+                    </div>
+                    <form onsubmit="compareReports(event, 'hpsm-zabbix')">
+                        <div class="compare-files">
+                            <div class="compare-file-section">
+                                <h4>📑 HPSM Report</h4>
+                                <p class="file-hint">HPSM export (SERIAL_NO_ column)</p>
+                                <input type="file" id="hpsmFile3" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="compare-divider"><span>VS</span></div>
+                            <div class="compare-file-section">
+                                <h4>📈 Zabbix Report</h4>
+                                <p class="file-hint">Zabbix export (Host column)</p>
+                                <input type="file" id="zabbixFile3" accept=".xlsx,.xls" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeModal('compareModal')">Cancel</button>
+                            <button type="submit" class="btn btn-management">🔍 Compare</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Full 3-Way Comparison -->
+                <div class="compare-tab-content" id="tab-full">
+                    <div class="compare-info">
+                        <p>Complete 3-way comparison between Scan, HPSM, and Zabbix reports.</p>
+                        <p class="example">✓ Found in all 3 = Verified | Found in 2 = Partial | Found in 1 = Review needed</p>
+                    </div>
+                    <form onsubmit="compareReports(event, 'full')">
+                        <div class="compare-files-three">
+                            <div class="compare-file-section">
+                                <h4>📋 Scan Report</h4>
+                                <p class="file-hint">Hostname column</p>
+                                <input type="file" id="scanFile3" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="compare-file-section">
+                                <h4>📑 HPSM Report</h4>
+                                <p class="file-hint">SERIAL_NO_ column</p>
+                                <input type="file" id="hpsmFile2" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="compare-file-section">
+                                <h4>📈 Zabbix Report</h4>
+                                <p class="file-hint">Host column</p>
+                                <input type="file" id="zabbixFile2" accept=".xlsx,.xls" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeModal('compareModal')">Cancel</button>
+                            <button type="submit" class="btn btn-management">🔍 Full Compare</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compare Results Modal -->
+    <div class="modal" id="compareResultsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>📊 Comparison Results</h2>
+                <button class="modal-close" onclick="closeModal('compareResultsModal')">&times;</button>
+            </div>
+            <div class="modal-body" id="compareResultsContent">
+                <!-- Results will be loaded here -->
             </div>
         </div>
     </div>

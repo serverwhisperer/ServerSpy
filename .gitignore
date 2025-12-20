@@ -42,8 +42,6 @@ exports/*.xlsx
 # PyInstaller
 *.manifest
 *.spec
-backend/build/
-backend/dist/
 
 # Logs
 *.log
@@ -55,14 +53,4 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
-
-# Electron / Node.js
-node_modules/
-electron/dist/
-electron/node_modules/
-*.blockmap
-
-# Build artifacts
-*.exe
-create-icon.py
 

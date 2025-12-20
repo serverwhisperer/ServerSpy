@@ -6,6 +6,8 @@
 // Global state
 let servers = [];
 let filteredServers = [];
+let projects = [];
+let currentProjectId = null; // null = all projects
 let sortColumn = 'hostname';
 let sortDirection = 'asc';
 let isLoading = false;
@@ -17,6 +19,7 @@ const API_BASE = '';
 // ==================== INITIALIZATION ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+    loadProjects();
     loadServers();
     loadStats();
     loadCredentials();
@@ -42,12 +45,34 @@ async function apiCall(endpoint, options = {}) {
 
 async function loadServers() {
     try {
-        const data = await apiCall('/api/servers');
+        let endpoint = '/api/servers';
+        
+        if (currentProjectId !== null) {
+            if (currentProjectId === 'unassigned') {
+                endpoint = '/api/projects/unassigned/servers';
+            } else {
+                endpoint = `/api/projects/${currentProjectId}/servers`;
+            }
+        }
+        
+        const data = await apiCall(endpoint);
         if (data.success) {
             servers = data.servers;
+            
+            // Add project names to servers
+            servers.forEach(server => {
+                if (server.project_id) {
+                    const project = projects.find(p => p.id === server.project_id);
+                    server.project_name = project ? project.name : 'Bilinmiyor';
+                } else {
+                    server.project_name = '';
+                }
+            });
+            
             filteredServers = [...servers];
             renderTable();
             updateEmptyState();
+            updateProjectStats();
         }
     } catch (error) {
         console.error('Error loading servers:', error);
@@ -83,6 +108,323 @@ async function loadCredentials() {
         }
     } catch (error) {
         console.error('Error loading credentials:', error);
+    }
+}
+
+// ==================== PROJECT MANAGEMENT ====================
+
+async function loadProjects() {
+    try {
+        const data = await apiCall('/api/projects');
+        if (data.success) {
+            projects = data.projects;
+            updateProjectDropdowns();
+        }
+    } catch (error) {
+        console.error('Error loading projects:', error);
+    }
+}
+
+function updateProjectDropdowns() {
+    const projectSelect = document.getElementById('projectSelect');
+    const assignProjectSelect = document.getElementById('assignProjectSelect');
+    
+    if (projectSelect) {
+        const currentValue = projectSelect.value;
+        projectSelect.innerHTML = '<option value="">Tüm Projeler</option>';
+        projectSelect.innerHTML += '<option value="unassigned">📁 Atanmamış</option>';
+        
+        projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `📂 ${project.name}`;
+            projectSelect.appendChild(option);
+        });
+        
+        // Restore selection
+        if (currentValue) {
+            projectSelect.value = currentValue;
+        }
+    }
+    
+    if (assignProjectSelect) {
+        assignProjectSelect.innerHTML = '<option value="">(Projesiz)</option>';
+        projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name;
+            assignProjectSelect.appendChild(option);
+        });
+    }
+}
+
+function onProjectChange() {
+    const projectSelect = document.getElementById('projectSelect');
+    const value = projectSelect.value;
+    
+    if (value === '') {
+        currentProjectId = null;
+    } else if (value === 'unassigned') {
+        currentProjectId = 'unassigned';
+    } else {
+        currentProjectId = parseInt(value);
+    }
+    
+    loadServers();
+    loadStats();
+    updateProjectStats();
+}
+
+function updateProjectStats() {
+    const projectStats = document.getElementById('projectServerCount');
+    const projectSelect = document.getElementById('projectSelect');
+    
+    if (!projectStats) return;
+    
+    if (currentProjectId === null) {
+        projectStats.textContent = `Toplam ${servers.length} sunucu`;
+    } else if (currentProjectId === 'unassigned') {
+        projectStats.textContent = `Atanmamış: ${servers.length} sunucu`;
+    } else {
+        const project = projects.find(p => p.id === currentProjectId);
+        if (project) {
+            projectStats.textContent = `${project.name}: ${servers.length} sunucu`;
+        }
+    }
+}
+
+function showNewProjectModal() {
+    showModal('newProjectModal');
+}
+
+async function createProject(event) {
+    event.preventDefault();
+    
+    const nameInput = document.getElementById('projectName');
+    const name = nameInput.value.trim();
+    
+    if (!name) {
+        showToast('Proje adı giriniz', 'warning');
+        return;
+    }
+    
+    showLoading('Proje oluşturuluyor...');
+    
+    try {
+        const data = await apiCall('/api/projects', {
+            method: 'POST',
+            body: JSON.stringify({ name })
+        });
+        
+        hideLoading();
+        
+        if (data.success) {
+            showToast('Proje oluşturuldu!', 'success');
+            closeModal('newProjectModal');
+            await loadProjects();
+            
+            // Select the new project
+            const projectSelect = document.getElementById('projectSelect');
+            if (projectSelect) {
+                projectSelect.value = data.id;
+                onProjectChange();
+            }
+        } else {
+            showToast(data.error || 'Proje oluşturulamadı', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Hata oluştu', 'error');
+    }
+}
+
+function showManageProjectsModal() {
+    loadProjectsList();
+    showModal('manageProjectsModal');
+}
+
+async function loadProjectsList() {
+    const container = document.getElementById('projectsList');
+    if (!container) return;
+    
+    try {
+        const data = await apiCall('/api/projects/with-stats');
+        if (!data.success) return;
+        
+        const projectsData = data.data.projects;
+        const unassigned = data.data.unassigned;
+        
+        if (projectsData.length === 0 && unassigned.total === 0) {
+            container.innerHTML = `
+                <div class="projects-empty">
+                    <div class="projects-empty-icon">📂</div>
+                    <p>Henüz proje oluşturulmamış</p>
+                    <button class="btn btn-primary" onclick="closeModal('manageProjectsModal'); showNewProjectModal();">
+                        ➕ İlk Projeyi Oluştur
+                    </button>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        // Unassigned servers info
+        if (unassigned.total > 0) {
+            html += `
+                <div class="project-item" style="border-left: 3px solid var(--warning);">
+                    <div class="project-item-info">
+                        <div class="project-item-name">📁 Atanmamış Sunucular</div>
+                        <div class="project-item-stats">
+                            ${unassigned.total} sunucu | 
+                            🟢 ${unassigned.online} | 
+                            🔴 ${unassigned.offline} | 
+                            🟡 ${unassigned.not_scanned}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Projects
+        projectsData.forEach(project => {
+            const stats = project.stats;
+            html += `
+                <div class="project-item">
+                    <div class="project-item-info">
+                        <div class="project-item-name">📂 ${escapeHtml(project.name)}</div>
+                        <div class="project-item-stats">
+                            ${stats.total} sunucu | 
+                            🟢 ${stats.online} | 
+                            🔴 ${stats.offline} | 
+                            🟡 ${stats.not_scanned}
+                        </div>
+                    </div>
+                    <div class="project-item-actions">
+                        <button class="action-btn" onclick="renameProjectPrompt(${project.id}, '${escapeHtml(project.name)}')" title="Yeniden Adlandır">✏️</button>
+                        <button class="action-btn delete" onclick="deleteProjectConfirm(${project.id}, '${escapeHtml(project.name)}')" title="Sil">🗑️</button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading projects list:', error);
+    }
+}
+
+function renameProjectPrompt(projectId, currentName) {
+    const newName = prompt('Yeni proje adı:', currentName);
+    if (newName && newName.trim() && newName.trim() !== currentName) {
+        renameProject(projectId, newName.trim());
+    }
+}
+
+async function renameProject(projectId, newName) {
+    try {
+        const data = await apiCall(`/api/projects/${projectId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name: newName })
+        });
+        
+        if (data.success) {
+            showToast('Proje yeniden adlandırıldı', 'success');
+            await loadProjects();
+            loadProjectsList();
+        } else {
+            showToast(data.error || 'Yeniden adlandırma başarısız', 'error');
+        }
+    } catch (error) {
+        showToast('Hata oluştu', 'error');
+    }
+}
+
+function deleteProjectConfirm(projectId, projectName) {
+    showConfirm(
+        '🗑️ Proje Sil',
+        `"${projectName}" projesini silmek istediğinize emin misiniz?\n\nProjedeki sunucular silinmez, sadece "atanmamış" olur.`,
+        'Evet, Sil',
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            try {
+                const data = await apiCall(`/api/projects/${projectId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (data.success) {
+                    showToast('Proje silindi', 'success');
+                    
+                    // If we were viewing this project, switch to all
+                    if (currentProjectId === projectId) {
+                        currentProjectId = null;
+                        document.getElementById('projectSelect').value = '';
+                    }
+                    
+                    await loadProjects();
+                    loadProjectsList();
+                    loadServers();
+                } else {
+                    showToast(data.error || 'Silme başarısız', 'error');
+                }
+            } catch (error) {
+                showToast('Hata oluştu', 'error');
+            }
+        }
+    );
+}
+
+function showAssignProjectModal(serverId) {
+    const server = servers.find(s => s.id === serverId);
+    if (!server) return;
+    
+    document.getElementById('assignServerId').value = serverId;
+    document.getElementById('assignServerInfo').textContent = `Sunucu: ${server.ip} (${server.hostname || 'hostname yok'})`;
+    
+    // Update dropdown
+    updateProjectDropdowns();
+    
+    // Select current project if any
+    const assignSelect = document.getElementById('assignProjectSelect');
+    if (server.project_id) {
+        assignSelect.value = server.project_id;
+    } else {
+        assignSelect.value = '';
+    }
+    
+    showModal('assignProjectModal');
+}
+
+async function assignSelectedToProject(event) {
+    event.preventDefault();
+    
+    const serverId = parseInt(document.getElementById('assignServerId').value);
+    const projectId = document.getElementById('assignProjectSelect').value;
+    
+    showLoading('Atanıyor...');
+    
+    try {
+        const data = await apiCall('/api/servers/assign', {
+            method: 'POST',
+            body: JSON.stringify({
+                server_ids: [serverId],
+                project_id: projectId ? parseInt(projectId) : null
+            })
+        });
+        
+        hideLoading();
+        
+        if (data.success) {
+            showToast('Sunucu projeye atandı', 'success');
+            closeModal('assignProjectModal');
+            await loadServers();
+        } else {
+            showToast(data.error || 'Atama başarısız', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Hata oluştu', 'error');
     }
 }
 
@@ -206,6 +548,11 @@ async function addServer(event) {
         serverData.os_type = osType;
     }
     
+    // Assign to current project if a specific project is selected
+    if (currentProjectId !== null && currentProjectId !== 'unassigned') {
+        serverData.project_id = currentProjectId;
+    }
+    
     if (useCustom) {
         serverData.username = document.getElementById('serverUsername').value.trim();
         serverData.password = document.getElementById('serverPassword').value;
@@ -230,6 +577,12 @@ async function addServer(event) {
             let msg = 'Sunucu eklendi!';
             if (data.detected) {
                 msg = `Sunucu eklendi! OS: ${data.os_type}`;
+            }
+            if (serverData.project_id) {
+                const project = projects.find(p => p.id === serverData.project_id);
+                if (project) {
+                    msg += ` (Proje: ${project.name})`;
+                }
             }
             showToast(msg, 'success');
             closeModal('addServerModal');
@@ -290,24 +643,43 @@ function clearAllServers() {
         return;
     }
     
+    // Determine what we're clearing based on current project selection
+    let title, message, endpoint;
+    
+    if (currentProjectId === null) {
+        title = '⚠️ Tüm Sunucuları Sil';
+        message = `TÜM sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        endpoint = '/api/servers/clear';
+    } else if (currentProjectId === 'unassigned') {
+        title = '⚠️ Atanmamış Sunucuları Sil';
+        message = `Atanmamış sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        endpoint = '/api/servers/clear?project_id=unassigned';
+    } else {
+        const project = projects.find(p => p.id === currentProjectId);
+        const projectName = project ? project.name : 'Seçili proje';
+        title = `⚠️ "${projectName}" Sunucularını Sil`;
+        message = `"${projectName}" projesindeki sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        endpoint = `/api/servers/clear?project_id=${currentProjectId}`;
+    }
+    
     showConfirm(
-        '⚠️ Tümünü Sil',
-        `Tüm sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`,
-        'Evet, Tümünü Sil',
+        title,
+        message,
+        'Evet, Sil',
         async (confirmed) => {
             if (!confirmed) return;
             
-            showLoading('Tüm sunucular siliniyor...');
+            showLoading('Sunucular siliniyor...');
             
             try {
-                const data = await apiCall('/api/servers/clear', {
+                const data = await apiCall(endpoint, {
                     method: 'DELETE'
                 });
                 
                 hideLoading();
                 
                 if (data.success) {
-                    showToast('Tüm sunucular silindi!', 'success');
+                    showToast(data.message || 'Sunucular silindi!', 'success');
                     await loadServers();
                     await loadStats();
                 } else {
@@ -335,6 +707,12 @@ async function importServers(event) {
         return;
     }
     
+    // Get the project to assign (use current project if it's a specific project)
+    let projectIdToAssign = null;
+    if (currentProjectId !== null && currentProjectId !== 'unassigned') {
+        projectIdToAssign = currentProjectId;
+    }
+    
     showLoading('Sunucular import ediliyor...');
     
     try {
@@ -342,15 +720,22 @@ async function importServers(event) {
         if (hasFile) {
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
+            if (projectIdToAssign) {
+                formData.append('project_id', projectIdToAssign);
+            }
             response = await fetch(`${API_BASE}/api/servers/bulk`, {
                 method: 'POST',
                 body: formData
             });
         } else {
+            const payload = { content: contentInput.value.trim() };
+            if (projectIdToAssign) {
+                payload.project_id = projectIdToAssign;
+            }
             response = await fetch(`${API_BASE}/api/servers/bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: contentInput.value.trim() })
+                body: JSON.stringify(payload)
             });
         }
         
@@ -361,6 +746,12 @@ async function importServers(event) {
         if (data.success) {
             const result = data.result;
             let msg = `${result.success} sunucu eklendi.`;
+            if (projectIdToAssign) {
+                const project = projects.find(p => p.id === projectIdToAssign);
+                if (project) {
+                    msg += ` (Proje: ${project.name})`;
+                }
+            }
             if (result.detected > 0) {
                 msg += ` (${result.detected} otomatik tespit)`;
             }
@@ -444,7 +835,26 @@ async function scanAllServers() {
 
 // ==================== EXPORT ====================
 
-function exportExcel() {
+function showExportModal() {
+    // Update the current project name in export modal
+    const exportCurrentName = document.getElementById('exportCurrentProjectName');
+    if (exportCurrentName) {
+        if (currentProjectId === null) {
+            exportCurrentName.textContent = 'Tüm sunucular (filtre yok)';
+        } else if (currentProjectId === 'unassigned') {
+            exportCurrentName.textContent = 'Atanmamış sunucular';
+        } else {
+            const project = projects.find(p => p.id === currentProjectId);
+            exportCurrentName.textContent = project ? project.name : 'Seçili proje';
+        }
+    }
+    
+    showModal('exportModal');
+}
+
+function exportCurrentProject() {
+    closeModal('exportModal');
+    
     if (servers.length === 0) {
         showToast('Export edilecek sunucu yok', 'warning');
         return;
@@ -452,8 +862,14 @@ function exportExcel() {
     
     showLoading('Excel raporu oluşturuluyor...');
     
+    let endpoint = `${API_BASE}/api/export/excel`;
+    
+    if (currentProjectId !== null && currentProjectId !== 'unassigned') {
+        endpoint = `${API_BASE}/api/export/excel/project/${currentProjectId}`;
+    }
+    
     const link = document.createElement('a');
-    link.href = `${API_BASE}/api/export/excel`;
+    link.href = endpoint;
     link.download = '';
     document.body.appendChild(link);
     link.click();
@@ -463,6 +879,29 @@ function exportExcel() {
         hideLoading();
         showToast('Excel raporu indirildi!', 'success');
     }, 1000);
+}
+
+function exportAllProjects() {
+    closeModal('exportModal');
+    
+    showLoading('Tüm projeler Excel raporu oluşturuluyor...');
+    
+    const link = document.createElement('a');
+    link.href = `${API_BASE}/api/export/excel/all-projects`;
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setTimeout(() => {
+        hideLoading();
+        showToast('Tüm projeler Excel raporu indirildi!', 'success');
+    }, 1500);
+}
+
+// Keep old function for backward compatibility
+function exportExcel() {
+    showExportModal();
 }
 
 // ==================== TABLE RENDERING ====================
@@ -478,6 +917,7 @@ function renderTable() {
         row.innerHTML = `
             <td>${escapeHtml(server.hostname || '-')}</td>
             <td class="ip-address">${escapeHtml(server.ip)}</td>
+            <td>${renderProjectBadge(server.project_name)}</td>
             <td>${renderOSBadge(server.os_type)}</td>
             <td>${escapeHtml(server.brand || '-')}</td>
             <td>${escapeHtml(server.model || '-')}</td>
@@ -489,6 +929,7 @@ function renderTable() {
             <td>
                 <div class="action-buttons">
                     <button class="action-btn" onclick="showServerDetails(${server.id})" title="Detaylar">👁️</button>
+                    <button class="action-btn" onclick="showAssignProjectModal(${server.id})" title="Projeye Ata">📂</button>
                     <button class="action-btn" onclick="showSetCredsModal(${server.id})" title="Kimlik Bilgisi">🔑</button>
                     <button class="action-btn scan" onclick="scanServer(${server.id})" title="Tara">🔄</button>
                     <button class="action-btn delete" onclick="deleteServer(${server.id})" title="Sil">🗑️</button>
@@ -497,6 +938,13 @@ function renderTable() {
         `;
         tbody.appendChild(row);
     });
+}
+
+function renderProjectBadge(projectName) {
+    if (!projectName) {
+        return '<span class="project-badge unassigned">Atanmamış</span>';
+    }
+    return `<span class="project-badge">${escapeHtml(projectName)}</span>`;
 }
 
 function renderOSBadge(osType) {
@@ -785,6 +1233,28 @@ function closeModal(modalId) {
 }
 
 function showImportModal() {
+    // Show info about which project servers will be added to
+    const importInfo = document.querySelector('#importModal .import-info');
+    if (importInfo && currentProjectId !== null && currentProjectId !== 'unassigned') {
+        const project = projects.find(p => p.id === currentProjectId);
+        if (project) {
+            // Add project info if not already there
+            let projectNote = importInfo.querySelector('.project-note');
+            if (!projectNote) {
+                projectNote = document.createElement('p');
+                projectNote.className = 'project-note';
+                projectNote.style.cssText = 'margin-top: 10px; padding: 8px; background: rgba(16, 185, 129, 0.1); border-radius: 6px; color: var(--accent-primary);';
+                importInfo.appendChild(projectNote);
+            }
+            projectNote.innerHTML = `📂 Sunucular <strong>"${escapeHtml(project.name)}"</strong> projesine eklenecek`;
+        }
+    } else {
+        const projectNote = document.querySelector('#importModal .project-note');
+        if (projectNote) {
+            projectNote.remove();
+        }
+    }
+    
     showModal('importModal');
 }
 
@@ -922,4 +1392,389 @@ function truncateText(text, maxLength) {
     if (!text) return '';
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
+}
+
+// ==================== REPORT COMPARISON ====================
+
+function showCompareModal() {
+    // Reset all forms
+    document.querySelectorAll('#compareModal input[type="file"]').forEach(input => {
+        input.value = '';
+    });
+    
+    // Reset to first tab
+    switchCompareTab('scan-hpsm');
+    
+    showModal('compareModal');
+}
+
+function switchCompareTab(tabId) {
+    // Update tab buttons
+    document.querySelectorAll('.compare-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // Update tab content
+    document.querySelectorAll('.compare-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+async function compareReports(event, compareType) {
+    event.preventDefault();
+    
+    let formData = new FormData();
+    let endpoint = '';
+    
+    if (compareType === 'scan-hpsm') {
+        const scanFile = document.getElementById('scanFile1').files[0];
+        const hpsmFile = document.getElementById('hpsmFile1').files[0];
+        
+        if (!scanFile || !hpsmFile) {
+            showToast('Please select both files', 'warning');
+            return;
+        }
+        
+        formData.append('scan_report', scanFile);
+        formData.append('hpsm_report', hpsmFile);
+        endpoint = '/api/compare/scan-hpsm';
+        
+    } else if (compareType === 'scan-zabbix') {
+        const scanFile = document.getElementById('scanFile2').files[0];
+        const zabbixFile = document.getElementById('zabbixFile1').files[0];
+        
+        if (!scanFile || !zabbixFile) {
+            showToast('Please select both files', 'warning');
+            return;
+        }
+        
+        formData.append('scan_report', scanFile);
+        formData.append('zabbix_report', zabbixFile);
+        endpoint = '/api/compare/scan-zabbix';
+        
+    } else if (compareType === 'hpsm-zabbix') {
+        const hpsmFile = document.getElementById('hpsmFile3').files[0];
+        const zabbixFile = document.getElementById('zabbixFile3').files[0];
+        
+        if (!hpsmFile || !zabbixFile) {
+            showToast('Please select both files', 'warning');
+            return;
+        }
+        
+        formData.append('hpsm_report', hpsmFile);
+        formData.append('zabbix_report', zabbixFile);
+        endpoint = '/api/compare/hpsm-zabbix';
+        
+    } else if (compareType === 'full') {
+        const scanFile = document.getElementById('scanFile3').files[0];
+        const hpsmFile = document.getElementById('hpsmFile2').files[0];
+        const zabbixFile = document.getElementById('zabbixFile2').files[0];
+        
+        if (!scanFile || !hpsmFile || !zabbixFile) {
+            showToast('Please select all three files', 'warning');
+            return;
+        }
+        
+        formData.append('scan_report', scanFile);
+        formData.append('hpsm_report', hpsmFile);
+        formData.append('zabbix_report', zabbixFile);
+        endpoint = '/api/compare/full';
+    }
+    
+    showLoading('Comparing reports...');
+    
+    try {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        hideLoading();
+        
+        if (data.success) {
+            closeModal('compareModal');
+            showCompareResults(data.results, compareType);
+        } else {
+            showToast(data.error || 'Comparison failed', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Error: ' + error.message, 'error');
+    }
+}
+
+function showCompareResults(results, compareType) {
+    const content = document.getElementById('compareResultsContent');
+    if (!content) return;
+    
+    let html = '';
+    
+    if (compareType === 'full') {
+        // 3-way comparison results
+        html = renderFullCompareResults(results);
+    } else {
+        // 2-way comparison results
+        html = renderTwoWayCompareResults(results, compareType);
+    }
+    
+    content.innerHTML = html;
+    
+    // Store results for download
+    window.lastCompareResults = results;
+    window.lastCompareType = compareType;
+    
+    showModal('compareResultsModal');
+}
+
+function renderTwoWayCompareResults(results, compareType) {
+    let source1, source2, count1, count2, missingIn2, missingIn1;
+    
+    if (compareType === 'scan-hpsm') {
+        source1 = 'Scan Report';
+        source2 = 'HPSM';
+        count1 = results.scan_count || 0;
+        count2 = results.hpsm_count || 0;
+        missingIn2 = results.missing_in_hpsm || [];
+        missingIn1 = results.missing_in_scan || [];
+    } else if (compareType === 'scan-zabbix') {
+        source1 = 'Scan Report';
+        source2 = 'Zabbix';
+        count1 = results.scan_count || 0;
+        count2 = results.zabbix_count || 0;
+        missingIn2 = results.missing_in_zabbix || [];
+        missingIn1 = results.missing_in_scan || [];
+    } else if (compareType === 'hpsm-zabbix') {
+        source1 = 'HPSM';
+        source2 = 'Zabbix';
+        count1 = results.hpsm_count || 0;
+        count2 = results.zabbix_count || 0;
+        missingIn2 = results.missing_in_zabbix || [];
+        missingIn1 = results.missing_in_hpsm || [];
+    }
+    
+    const matching = results.matching || [];
+    
+    return `
+        <div class="compare-results">
+            <div class="compare-summary">
+                <div class="compare-stat info">
+                    <div class="compare-stat-value">${count1}</div>
+                    <div class="compare-stat-label">${source1}</div>
+                </div>
+                <div class="compare-stat info">
+                    <div class="compare-stat-value">${count2}</div>
+                    <div class="compare-stat-label">${source2}</div>
+                </div>
+                <div class="compare-stat success">
+                    <div class="compare-stat-value">${matching.length}</div>
+                    <div class="compare-stat-label">Matching</div>
+                </div>
+                <div class="compare-stat danger">
+                    <div class="compare-stat-value">${missingIn2.length}</div>
+                    <div class="compare-stat-label">Missing in ${source2}</div>
+                </div>
+                <div class="compare-stat warning">
+                    <div class="compare-stat-value">${missingIn1.length}</div>
+                    <div class="compare-stat-label">Missing in ${source1}</div>
+                </div>
+            </div>
+            
+            <div class="compare-section">
+                <h4>❌ Missing in ${source2} (${missingIn2.length})</h4>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                    These servers are in ${source1} but not in ${source2}
+                </p>
+                <div class="compare-list">
+                    ${missingIn2.length > 0 
+                        ? missingIn2.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                        : '<div class="compare-list-empty">No missing records ✓</div>'
+                    }
+                </div>
+            </div>
+            
+            <div class="compare-section">
+                <h4>⚠️ Missing in ${source1} (${missingIn1.length})</h4>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                    These servers are in ${source2} but not in ${source1}
+                </p>
+                <div class="compare-list">
+                    ${missingIn1.length > 0 
+                        ? missingIn1.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                        : '<div class="compare-list-empty">No missing records ✓</div>'
+                    }
+                </div>
+            </div>
+            
+            <div class="compare-actions">
+                <button class="btn btn-secondary" onclick="closeModal('compareResultsModal')">Close</button>
+                <button class="btn btn-info" onclick="downloadCompareReport()">📥 Download Report</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderFullCompareResults(results) {
+    const inAll3 = results.in_all_three || [];
+    const inScanHpsm = results.in_scan_and_hpsm_only || [];
+    const inScanZabbix = results.in_scan_and_zabbix_only || [];
+    const inHpsmZabbix = results.in_hpsm_and_zabbix_only || [];
+    const onlyInScan = results.only_in_scan || [];
+    const onlyInHpsm = results.only_in_hpsm || [];
+    const onlyInZabbix = results.only_in_zabbix || [];
+    
+    return `
+        <div class="compare-results">
+            <div class="compare-summary">
+                <div class="compare-stat info">
+                    <div class="compare-stat-value">${results.scan_count || 0}</div>
+                    <div class="compare-stat-label">Scan Report</div>
+                </div>
+                <div class="compare-stat info">
+                    <div class="compare-stat-value">${results.hpsm_count || 0}</div>
+                    <div class="compare-stat-label">HPSM</div>
+                </div>
+                <div class="compare-stat info">
+                    <div class="compare-stat-value">${results.zabbix_count || 0}</div>
+                    <div class="compare-stat-label">Zabbix</div>
+                </div>
+                <div class="compare-stat success">
+                    <div class="compare-stat-value">${inAll3.length}</div>
+                    <div class="compare-stat-label">✓ Verified (All 3)</div>
+                </div>
+            </div>
+            
+            <div class="compare-section" style="border-left: 4px solid var(--success);">
+                <h4>✅ Verified - In All 3 Systems (${inAll3.length})</h4>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                    These servers are confirmed in Scan, HPSM, and Zabbix
+                </p>
+                <div class="compare-list">
+                    ${inAll3.length > 0 
+                        ? inAll3.slice(0, 50).map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('') + (inAll3.length > 50 ? `<div class="compare-list-item">... and ${inAll3.length - 50} more</div>` : '')
+                        : '<div class="compare-list-empty">No records found in all 3 systems</div>'
+                    }
+                </div>
+            </div>
+            
+            <div class="compare-grid">
+                <div class="compare-section" style="border-left: 4px solid var(--warning);">
+                    <h4>⚠️ In Scan + HPSM only (${inScanHpsm.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Missing from Zabbix</p>
+                    <div class="compare-list">
+                        ${inScanHpsm.length > 0 
+                            ? inScanHpsm.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+                
+                <div class="compare-section" style="border-left: 4px solid var(--warning);">
+                    <h4>⚠️ In Scan + Zabbix only (${inScanZabbix.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Missing from HPSM</p>
+                    <div class="compare-list">
+                        ${inScanZabbix.length > 0 
+                            ? inScanZabbix.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+                
+                <div class="compare-section" style="border-left: 4px solid var(--warning);">
+                    <h4>⚠️ In HPSM + Zabbix only (${inHpsmZabbix.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Missing from Scan</p>
+                    <div class="compare-list">
+                        ${inHpsmZabbix.length > 0 
+                            ? inHpsmZabbix.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <div class="compare-grid">
+                <div class="compare-section" style="border-left: 4px solid var(--danger);">
+                    <h4>❌ Only in Scan (${onlyInScan.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Review needed</p>
+                    <div class="compare-list">
+                        ${onlyInScan.length > 0 
+                            ? onlyInScan.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+                
+                <div class="compare-section" style="border-left: 4px solid var(--danger);">
+                    <h4>❌ Only in HPSM (${onlyInHpsm.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Review needed</p>
+                    <div class="compare-list">
+                        ${onlyInHpsm.length > 0 
+                            ? onlyInHpsm.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+                
+                <div class="compare-section" style="border-left: 4px solid var(--danger);">
+                    <h4>❌ Only in Zabbix (${onlyInZabbix.length})</h4>
+                    <p style="font-size: 11px; color: var(--text-muted);">Review needed</p>
+                    <div class="compare-list">
+                        ${onlyInZabbix.length > 0 
+                            ? onlyInZabbix.map(h => `<div class="compare-list-item">${escapeHtml(h)}</div>`).join('')
+                            : '<div class="compare-list-empty">None</div>'
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <div class="compare-actions">
+                <button class="btn btn-secondary" onclick="closeModal('compareResultsModal')">Close</button>
+                <button class="btn btn-info" onclick="downloadCompareReport()">📥 Download Report</button>
+            </div>
+        </div>
+    `;
+}
+
+async function downloadCompareReport() {
+    if (!window.lastCompareResults) {
+        showToast('No report to download', 'warning');
+        return;
+    }
+    
+    showLoading('Generating report...');
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/compare/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...window.lastCompareResults,
+                compare_type: window.lastCompareType
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `comparison_report_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            hideLoading();
+            showToast('Report downloaded!', 'success');
+        } else {
+            hideLoading();
+            showToast('Download failed', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Error occurred', 'error');
+    }
 }

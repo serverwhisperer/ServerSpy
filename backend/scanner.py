@@ -357,29 +357,25 @@ def check_port(ip, port, timeout=3):
         return False
 
 
-def detect_os_type(ip, timeout=2):
+def detect_os_type(ip, timeout=3):
     """
-    Auto-detect OS type based on open ports
-    Returns: 'Windows', 'Linux', or None if can't detect
+    Detect OS type by checking open ports
+    
+    Returns:
+        'Windows' if WinRM ports are open (5985/5986)
+        'Linux' if SSH port is open (22)
+        'Windows' as default fallback
     """
+    # Check WinRM ports first (Windows)
+    if check_port(ip, 5985, timeout) or check_port(ip, 5986, timeout):
+        return 'Windows'
+    
     # Check SSH port (Linux)
-    ssh_open = check_port(ip, 22, timeout)
-    
-    # Check WinRM ports (Windows)
-    winrm_http_open = check_port(ip, 5985, timeout)
-    winrm_https_open = check_port(ip, 5986, timeout)
-    winrm_open = winrm_http_open or winrm_https_open
-    
-    if ssh_open and not winrm_open:
+    if check_port(ip, 22, timeout):
         return 'Linux'
-    elif winrm_open and not ssh_open:
-        return 'Windows'
-    elif ssh_open and winrm_open:
-        # Both open - could be Windows with OpenSSH, assume Windows
-        return 'Windows'
-    else:
-        # Neither open - can't detect, default to Windows
-        return None
+    
+    # Default to Windows if can't detect
+    return 'Windows'
 
 
 def scan_server(server):
