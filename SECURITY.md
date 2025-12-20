@@ -13,9 +13,16 @@
 
 ## 🎯 Genel Bakış
 
-ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri ile tasarlanmıştır. Sistem, **root/domain admin şifreleri** gibi kritik bilgileri korumak için çok katmanlı güvenlik yaklaşımı kullanır.
+ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri ile tasarlanmıştır. Sistem, **root/domain admin şifreleri** gibi kritik bilgileri korumak için **çok katmanlı güvenlik yaklaşımı** kullanır.
 
 ### Güvenlik Seviyesi: **YÜKSEK** ✅
+
+**Temel Güvenlik Prensipleri:**
+- 🔐 **Defense in Depth:** Çok katmanlı koruma
+- 🔑 **Key Management:** Güvenli key yönetimi (Windows DPAPI)
+- 🛡️ **Least Privilege:** Minimum yetki prensibi
+- 📝 **Secure by Default:** Varsayılan güvenli konfigürasyon
+- 🗑️ **Data Minimization:** Geçici veri saklama
 
 ---
 
@@ -348,34 +355,117 @@ app.run(host='127.0.0.1', port=5000,
 ### Şifreleme Akışı
 
 ```
-1. Kullanıcı şifre girer
+1. Kullanıcı şifre girer (UI)
    ↓
-2. Şifre encrypt_password() ile şifrelenir
+2. Frontend → Backend API (HTTPS üzerinden)
    ↓
-3. Şifreli şifre database'e kaydedilir
+3. encrypt_password() fonksiyonu çağrılır
    ↓
-4. Okuma sırasında decrypt_password() ile decrypt edilir
+4. Fernet (AES-128) ile şifreleme
    ↓
-5. API response'unda password alanı kaldırılır
+5. Base64 encoding
+   ↓
+6. Database'e kaydedilir (şifreli format)
+   ↓
+7. Okuma sırasında decrypt_password() ile decrypt
+   ↓
+8. API response'unda password alanı kaldırılır (sanitize_server_data)
 ```
 
-### Key Yönetimi
+### Key Yönetimi Detayları
+
+**Windows DPAPI Kullanımı:**
+```python
+# Key oluşturma
+key = Fernet.generate_key()  # 32-byte random key
+
+# Key'i DPAPI ile şifreleme
+encrypted_key = win32crypt.CryptProtectData(
+    key,
+    "ServerScout Encryption Key",
+    None, None, None, 0
+)
+
+# Key dosyasına kaydetme
+# Konum: %APPDATA%\ServerScout\data\.encryption_key
+
+# Key'i decrypt etme
+decrypted_key = win32crypt.CryptUnprotectData(
+    encrypted_key, None, None, None, 0
+)[1]
+```
+
+**Linux/Mac Master Key:**
+```python
+# Master key oluşturma
+salt = f"{username}{hostname}".encode()
+kdf = PBKDF2HMAC(
+    algorithm=hashes.SHA256(),
+    length=32,
+    salt=salt,
+    iterations=100000
+)
+master_key = kdf.derive(b"ServerScoutMasterKey")
+
+# Key'i master key ile şifreleme
+fernet = Fernet(master_key)
+encrypted_key = fernet.encrypt(encryption_key)
+```
+
+### Güvenlik Katmanları
 
 ```
-Windows:
-1. Key generate edilir (Fernet.generate_key())
-2. Key Windows DPAPI ile şifrelenir
-3. Şifreli key .encryption_key dosyasına kaydedilir
-4. Kullanım sırasında DPAPI ile decrypt edilir
-
-Linux:
-1. Key generate edilir
-2. Master key (user+hostname) ile şifrelenir
-3. Şifreli key .encryption_key dosyasına kaydedilir
-4. Kullanım sırasında master key ile decrypt edilir
+Layer 1: HTTPS (Transport Security)
+  ↓ Tüm trafik şifreli
+Layer 2: Database Encryption (Storage Security)
+  ↓ Şifreler AES-128 ile şifreli
+Layer 3: Key Protection (Key Security)
+  ↓ Key Windows DPAPI ile korunuyor
+Layer 4: API Sanitization (Response Security)
+  ↓ Password response'larda yok
+Layer 5: Memory Safety (Runtime Security)
+  ↓ Default creds memory'de şifreli
+Layer 6: Temporary Data (Data Lifecycle)
+  ↓ Her başlangıçta temizlenir
 ```
 
 ---
+
+## 🔬 Güvenlik Testleri
+
+### Test Senaryoları
+
+**1. Database Dosyası Erişimi Testi:**
+```bash
+# Database dosyasını kopyala
+cp %APPDATA%\ServerScout\data\inventory.db test.db
+
+# SQLite ile aç
+sqlite3 test.db
+SELECT password FROM servers;
+
+# Sonuç: Şifreli string görülür, decrypt edilemez (key olmadan)
+```
+
+**2. Key Dosyası Erişimi Testi:**
+```bash
+# Key dosyasını başka bilgisayara kopyala
+# Sonuç: Decrypt edilemez (Windows DPAPI farklı kullanıcı)
+```
+
+**3. API Response Testi:**
+```bash
+# API'den server bilgisi al
+curl https://localhost:5000/api/servers/1
+
+# Sonuç: Password alanı yok, sadece has_password boolean
+```
+
+**4. Memory Dump Testi:**
+```bash
+# Process memory dump al
+# Sonuç: Default credentials şifreli format'ta
+```
 
 ## 📞 Destek ve Sorular
 
@@ -383,6 +473,7 @@ Güvenlik ile ilgili sorularınız için:
 - **Teknik Dokümantasyon:** `backend/encryption.py`
 - **Database Modülü:** `backend/database.py`
 - **API Güvenliği:** `backend/app.py`
+- **Key Açıklaması:** `ENCRYPTION-KEY-EXPLANATION.md`
 
 ---
 

@@ -160,15 +160,37 @@ The generated Excel file contains 3 sheets:
 
 ## 🔌 API Endpoints
 
+### Server Management
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/servers` | Get all servers |
+| GET | `/api/servers` | Get all servers (filtered by project) |
 | POST | `/api/servers` | Add new server |
+| GET | `/api/servers/:id` | Get single server |
 | DELETE | `/api/servers/:id` | Delete server |
-| POST | `/api/servers/bulk` | Bulk import from CSV |
+| PUT | `/api/servers/:id/credentials` | Update server credentials |
+| POST | `/api/servers/bulk` | Bulk import from CSV/TXT |
+
+### Scanning
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | POST | `/api/scan/:id` | Scan single server |
-| POST | `/api/scan-all` | Scan all servers |
-| GET | `/api/export/excel` | Download Excel report |
+| POST | `/api/scan-all` | Scan all servers (or filtered by project) |
+
+### Projects
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects` | Get all projects |
+| POST | `/api/projects` | Create new project |
+| GET | `/api/projects/:id/servers` | Get servers in project |
+| PUT | `/api/projects/:id` | Rename project |
+| DELETE | `/api/projects/:id` | Delete project |
+
+### Export & Stats
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/export/excel` | Download Excel report (all servers) |
+| GET | `/api/export/excel/project/:id` | Download Excel report (project) |
+| GET | `/api/export/excel/all-projects` | Download Excel report (all projects) |
 | GET | `/api/stats` | Get server statistics |
 
 ## 📝 CSV Import Format
@@ -226,13 +248,41 @@ build.bat
 
 ## 🛠️ Dependencies
 
-- **Flask** - Web framework
-- **Flask-CORS** - Cross-origin resource sharing
-- **Paramiko** - SSH client for Linux scanning
-- **PyWinRM** - WinRM client for Windows scanning
-- **Pandas** - Data manipulation
-- **OpenPyXL** - Excel file generation
-- **PyInstaller** - Executable packaging
+### Backend (Python)
+- **Flask** (3.0+) - Web framework
+- **Flask-CORS** (4.0+) - Cross-origin resource sharing
+- **Paramiko** (3.4+) - SSH client for Linux scanning
+- **PyWinRM** (0.4.3+) - WinRM client for Windows scanning
+- **Pandas** (2.2+) - Data manipulation
+- **OpenPyXL** (3.1+) - Excel file generation
+- **Cryptography** (41.0+) - Password encryption (AES-128)
+- **PyWin32** (306+) - Windows DPAPI support (Windows only)
+
+### Frontend
+- **Electron** (28.0+) - Desktop application framework
+- **Node.js** (18+) - Runtime for Electron
+
+Install all dependencies:
+```bash
+cd backend
+pip install -r requirements.txt
+
+cd ../electron
+npm install
+```
+
+## 📚 Documentation
+
+Comprehensive documentation available:
+
+- **[SECURITY.md](SECURITY.md)** - Complete security documentation
+- **[PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md)** - Architecture and code organization
+- **[DATABASE-EXPLANATION.md](DATABASE-EXPLANATION.md)** - Database usage and purpose
+- **[ENCRYPTION-KEY-EXPLANATION.md](ENCRYPTION-KEY-EXPLANATION.md)** - Encryption key management
+- **[HTTPS-SETUP.md](HTTPS-SETUP.md)** - HTTPS configuration guide
+- **[BUILD.md](BUILD.md)** - Build instructions
+- **[QUICK-START.md](QUICK-START.md)** - Quick start guide
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history
 
 ## 📜 License
 
@@ -242,6 +292,13 @@ MIT License - Feel free to use and modify.
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+## ⚠️ Important Notes
+
+- **Build files are NOT included** in repository (too large for GitHub)
+- Users can build executables using `build-all.bat`
+- See [BUILD.md](BUILD.md) for build instructions
+- Build outputs are in `.gitignore`
+
 ---
 
-Made with ❤️ by ServerWhisperer
+**Made with ❤️ by ServerWhisperer**
