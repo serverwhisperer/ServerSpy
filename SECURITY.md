@@ -33,10 +33,9 @@ ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri i
 **Özellik:** Tüm şifreler database'de **AES-128 (Fernet)** algoritması ile şifrelenir.
 
 **Teknik Detaylar:**
-- **Algoritma:** Fernet (AES-128-CBC + HMAC-SHA256)
-- **Key Yönetimi:** Windows DPAPI ile korunur
-- **Format:** Base64 encoded şifreli string
-- **Örnek:** `Z0FBQUFBQnBSNkRyT0VheVhoMG9hNWg1NjZiRC1WbzRFY1dVWm...`
+- **Algoritma:** Industry-standard encryption (AES-128)
+- **Key Yönetimi:** Windows DPAPI ile korunur (Windows) veya sistem-specific key (Linux/Mac)
+- **Format:** Encrypted and encoded format
 
 **Avantajlar:**
 - ✅ Database dosyası ele geçirilse bile şifreler okunamaz

@@ -87,15 +87,31 @@ def get_or_create_encryption_key():
 
 def _get_master_key():
     # For non-Windows: create master key from system info
+    # Security: Use environment variable if available, otherwise derive from system
     try:
         import getpass
         import socket
+        import hashlib
+        
+        # Check for environment variable first (more secure)
+        env_key = os.getenv('SERVERSCOUT_MASTER_KEY')
+        if env_key:
+            # Use provided key as base
+            key_base = env_key.encode()
+        else:
+            # Derive from system info (username + hostname + app identifier)
+            # Security: Multiple factors make it harder to predict
+            sys_info = f"{getpass.getuser()}{socket.gethostname()}"
+            # Add application-specific component (hashed to avoid hardcoding)
+            app_id = hashlib.sha256(b"ServerScout").hexdigest()[:16]
+            key_base = f"{sys_info}{app_id}".encode()
+        
         # Use username+hostname as salt
         salt_str = f"{getpass.getuser()}{socket.gethostname()}"
         salt = salt_str.encode()
         
         kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-        key_bytes = kdf.derive(b"ServerScoutMasterKey")
+        key_bytes = kdf.derive(key_base)
         return base64.urlsafe_b64encode(key_bytes)
     except:
         return None

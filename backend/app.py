@@ -55,6 +55,7 @@ from database import (
 from scanner import scan_server, scan_all_servers, detect_os_type
 from excel_export import generate_excel_report, generate_project_excel_report, generate_all_projects_excel_report
 from encryption import encrypt_password, decrypt_password, sanitize_server_data
+from validation import validate_ip, validate_username, validate_password, validate_project_name, validate_os_type
 
 # Import configuration
 from config import get_frontend_path, SERVER_HOST, SERVER_PORT, USE_HTTPS
@@ -117,7 +118,8 @@ def api_get_credentials():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/credentials', methods=['POST'])
@@ -136,7 +138,8 @@ def api_save_credentials():
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers/<int:srv_id>/credentials', methods=['PUT'])
@@ -152,11 +155,20 @@ def api_update_server_credentials(srv_id):
         user = data.get('username', '').strip()
         pwd = data.get('password', '')
         
+        # Validate username
+        is_valid, error_msg = validate_username(user)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
         if not user:
             return jsonify({'success': False, 'error': 'Username is required'}), 400
         
+        # Validate password
         if pwd is None:
             pwd = ''
+        is_valid, error_msg = validate_password(pwd)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
         
         srv = get_server(srv_id)
         if not srv:
@@ -170,7 +182,7 @@ def api_update_server_credentials(srv_id):
         return jsonify({'success': False, 'error': 'Update failed'}), 500
     except Exception as e:
         logging.error(f"Error updating credentials: {e}", exc_info=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 # Server API
@@ -193,7 +205,8 @@ def api_get_servers():
         
         return jsonify({'success': True, 'servers': servers})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers/<int:srv_id>', methods=['GET'])
@@ -205,35 +218,63 @@ def api_get_server(srv_id):
             return jsonify({'success': True, 'server': srv})
         return jsonify({'success': False, 'error': 'Server not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers', methods=['POST'])
 def api_add_server():
     try:
-        data = request.get_json()
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
         
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid request data'}), 400
+        
+        # Validate IP
         if not data.get('ip'):
             return jsonify({'success': False, 'error': 'Missing required field: ip'}), 400
         
         ip_addr = data['ip'].strip()
+        is_valid, error_msg = validate_ip(ip_addr)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Validate username
         user = data.get('username', '').strip()
+        is_valid, error_msg = validate_username(user)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Validate password
         pwd = data.get('password', '')
+        is_valid, error_msg = validate_password(pwd)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
         
         # Use defaults if needed
         if data.get('use_default', False) or (not user and not pwd):
             user = user or 'pending'
             pwd = pwd or 'pending'
         
-        # OS detection
+        # Validate OS type
         os_t = data.get('os_type', '').strip()
-        auto_detected = False
+        is_valid, error_msg = validate_os_type(os_t)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
         
+        auto_detected = False
         if not os_t or data.get('auto_detect', False):
             os_t = detect_os_type(ip_addr)
             auto_detected = True
         
         proj_id = data.get('project_id')
+        if proj_id is not None:
+            try:
+                proj_id = int(proj_id)
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid project_id'}), 400
         
         res = add_server(ip_addr, user, pwd, os_t, proj_id)
         
@@ -243,10 +284,11 @@ def api_add_server():
                 resp['detected'] = True
                 resp['os_type'] = os_t
             return jsonify(resp)
-        return jsonify({'success': False, 'error': res['error']}), 400
+        return jsonify({'success': False, 'error': res.get('error', 'Failed to add server')}), 400
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"Error adding server: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers/<int:srv_id>', methods=['DELETE'])
@@ -256,7 +298,8 @@ def api_delete_server(srv_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Server not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers/clear', methods=['DELETE'])
@@ -276,7 +319,8 @@ def api_clear_servers():
         
         return jsonify({'success': True, 'deleted': cnt, 'message': msg})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/servers/bulk', methods=['POST'])
@@ -326,7 +370,8 @@ def api_bulk_import():
         res = bulk_add_servers(srv_list, proj_id)
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 def parse_server_list_content(content, auto_detect=True):
@@ -369,7 +414,8 @@ def api_get_projects():
         projs = get_all_projects()
         return jsonify({'success': True, 'projects': projs})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/with-stats', methods=['GET'])
 def api_get_projects_with_stats():
@@ -377,7 +423,8 @@ def api_get_projects_with_stats():
         data = get_all_projects_with_stats()
         return jsonify({'success': True, 'data': data})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects', methods=['POST'])
 def api_create_project():
@@ -391,7 +438,8 @@ def api_create_project():
             return jsonify({'success': True, 'id': res['id']})
         return jsonify({'success': False, 'error': res['error']}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/<int:proj_id>', methods=['GET'])
 def api_get_project(proj_id):
@@ -401,7 +449,8 @@ def api_get_project(proj_id):
             return jsonify({'success': True, 'project': proj})
         return jsonify({'success': False, 'error': 'Project not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/projects/<int:proj_id>', methods=['PUT'])
@@ -433,7 +482,8 @@ def api_delete_project(proj_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Project not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/<int:proj_id>/servers', methods=['GET'])
 def api_get_project_servers(proj_id):
@@ -443,7 +493,8 @@ def api_get_project_servers(proj_id):
         srv_list = sanitize_server_data(srv_list)
         return jsonify({'success': True, 'servers': srv_list, 'stats': stats})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/unassigned/servers', methods=['GET'])
 def api_get_unassigned_servers():
@@ -453,7 +504,8 @@ def api_get_unassigned_servers():
         srv_list = sanitize_server_data(srv_list)
         return jsonify({'success': True, 'servers': srv_list, 'stats': stats})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/servers/assign', methods=['POST'])
 def api_assign_servers():
@@ -466,7 +518,8 @@ def api_assign_servers():
         res = assign_servers_to_project(srv_ids, proj_id)
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 # Scanning API
@@ -507,7 +560,8 @@ def api_scan_server(srv_id):
         
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/scan-all', methods=['POST'])
@@ -585,7 +639,8 @@ def api_scan_all():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 # Export API
@@ -599,7 +654,8 @@ def api_export_excel():
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/export/excel/project/<int:proj_id>', methods=['GET'])
@@ -614,7 +670,8 @@ def api_export_project_excel(proj_id):
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/export/excel/all-projects', methods=['GET'])
@@ -632,7 +689,8 @@ def api_export_all_projects_excel():
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 # Stats API
@@ -741,7 +799,8 @@ def api_compare_scan_hpsm():
         return jsonify({'success': True, 'results': results})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/compare/scan-zabbix', methods=['POST'])
@@ -783,7 +842,8 @@ def api_compare_scan_zabbix():
         return jsonify({'success': True, 'results': results})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/compare/hpsm-zabbix', methods=['POST'])
@@ -828,7 +888,8 @@ def api_compare_hpsm_zabbix():
         return jsonify({'success': True, 'results': results})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/compare/full', methods=['POST'])
@@ -888,7 +949,8 @@ def api_compare_full():
         return jsonify({'success': True, 'results': results})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/compare/download', methods=['POST'])
@@ -914,7 +976,8 @@ def api_download_compare_report():
         )
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @app.route('/api/stats', methods=['GET'])
@@ -923,7 +986,8 @@ def api_get_stats():
         stats = get_server_stats()
         return jsonify({'success': True, 'stats': stats})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 # Main
 
