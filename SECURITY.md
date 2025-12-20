@@ -1,463 +1,521 @@
-# 🔐 ServerScout - Güvenlik Dokümantasyonu
+# ServerScout - Security Documentation
 
-## 📋 İçindekiler
-1. [Genel Bakış](#genel-bakış)
-2. [Şifreleme Sistemi](#şifreleme-sistemi)
-3. [Veri Koruma](#veri-koruma)
-4. [Ağ Güvenliği](#ağ-güvenliği)
-5. [Erişim Kontrolü](#erişim-kontrolü)
-6. [Risk Analizi](#risk-analizi)
-7. [Öneriler ve En İyi Uygulamalar](#öneriler-ve-en-iyi-uygulamalar)
+## Table of Contents
 
----
-
-## 🎯 Genel Bakış
-
-ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri ile tasarlanmıştır. Sistem, **root/domain admin şifreleri** gibi kritik bilgileri korumak için **çok katmanlı güvenlik yaklaşımı** kullanır.
-
-### Güvenlik Seviyesi: **YÜKSEK** ✅
-
-**Temel Güvenlik Prensipleri:**
-- 🔐 **Defense in Depth:** Çok katmanlı koruma
-- 🔑 **Key Management:** Güvenli key yönetimi (Windows DPAPI)
-- 🛡️ **Least Privilege:** Minimum yetki prensibi
-- 📝 **Secure by Default:** Varsayılan güvenli konfigürasyon
-- 🗑️ **Data Minimization:** Geçici veri saklama
+1. [Overview](#overview)
+2. [Encryption System](#encryption-system)
+3. [Data Protection](#data-protection)
+4. [Network Security](#network-security)
+5. [Access Control](#access-control)
+6. [Risk Analysis](#risk-analysis)
+7. [Recommendations and Best Practices](#recommendations-and-best-practices)
 
 ---
 
-## 🔒 Şifreleme Sistemi
+## Overview
 
-### 1. Database Şifreleme
+ServerScout is designed with production-ready security features. The system uses a multi-layered security approach to protect critical information such as root/domain admin passwords.
 
-**Özellik:** Tüm şifreler database'de **AES-128 (Fernet)** algoritması ile şifrelenir.
+### Security Level: HIGH
 
-**Teknik Detaylar:**
-- **Algoritma:** Industry-standard encryption (AES-128)
-- **Key Yönetimi:** Windows DPAPI ile korunur (Windows) veya sistem-specific key (Linux/Mac)
-- **Format:** Encrypted and encoded format
+**Core Security Principles:**
 
-**Avantajlar:**
-- ✅ Database dosyası ele geçirilse bile şifreler okunamaz
-- ✅ Her şifre ayrı ayrı şifrelenir
-- ✅ Industry-standard encryption (NIST onaylı)
-
-### 2. Encryption Key Koruması
-
-**Windows Ortamı:**
-- Key, **Windows DPAPI (Data Protection API)** ile korunur
-- Key, sadece aynı Windows kullanıcı hesabı tarafından decrypt edilebilir
-- **Avantaj:** Key, Windows kullanıcı profili ile bağlantılıdır
-- **Güvenlik:** Key dosyası kullanıcı profilinde güvenli bir konumda saklanır
-
-**Linux/Mac Ortamı:**
-- Key, sistem-specific master key ile şifrelenir
-- Master key, kullanıcı ve sistem bilgilerinden türetilir
-- Key dosyası sadece owner tarafından okunabilir (600 permissions)
-- **Güvenlik:** Key, sistem ve kullanıcıya özgüdür
-
-### 3. Memory Güvenliği
-
-**Özellik:** Default credentials (varsayılan şifreler) memory'de de şifreli tutulur.
-
-**Teknik Detaylar:**
-- Default credentials dictionary'de password'ler şifreli saklanır
-- Kullanım sırasında decrypt edilir
-- Uygulama kapanınca memory temizlenir
-
-**Avantajlar:**
-- ✅ Process memory dump ile şifreler okunamaz
-- ✅ Memory'de sadece şifreli format var
+- Defense in Depth: Multi-layered protection
+- Key Management: Secure key management (Windows DPAPI)
+- Least Privilege: Minimum privilege principle
+- Secure by Default: Secure default configuration
+- Data Minimization: Temporary data storage
 
 ---
 
-## 🛡️ Veri Koruma
+## Encryption System
 
-### 1. API Response Güvenliği
+### 1. Database Encryption
 
-**Özellik:** API response'larında **hiçbir zaman** password gönderilmez.
+**Feature:** All passwords in the database are encrypted using AES-128 (Fernet) algorithm.
 
-**Uygulama:**
-- Tüm API endpoint'leri `sanitize_server_data()` fonksiyonunu kullanır
-- Password alanı response'dan otomatik kaldırılır
-- Sadece `has_password` boolean flag'i gönderilir
+**Technical Details:**
 
-**Etkilenen Endpoint'ler:**
-- `GET /api/servers` - Tüm sunucular
-- `GET /api/servers/:id` - Tek sunucu
-- `GET /api/projects/:id/servers` - Proje sunucuları
+- Algorithm: Industry-standard encryption (AES-128)
+- Key Management: Protected with Windows DPAPI (Windows) or system-specific key (Linux/Mac)
+- Format: Encrypted and encoded format
+
+**Advantages:**
+
+- Database file can be accessed but passwords cannot be read
+- Each password is encrypted separately
+- Industry-standard encryption (NIST approved)
+
+### 2. Encryption Key Protection
+
+**Windows Environment:**
+
+- Key is protected with Windows DPAPI (Data Protection API)
+- Key can only be decrypted by the same Windows user account
+- Advantage: Key is linked to Windows user profile
+- Security: Key file is stored in a secure location in user profile
+
+**Linux/Mac Environment:**
+
+- Key is encrypted with system-specific master key
+- Master key is derived from user and system information
+- Key file is readable only by owner (600 permissions)
+- Security: Key is specific to system and user
+
+### 3. Memory Security
+
+**Feature:** Default credentials (default passwords) are also stored encrypted in memory.
+
+**Technical Details:**
+
+- Default credentials dictionary stores passwords encrypted
+- Decrypted during use
+- Memory is cleared when application closes
+
+**Advantages:**
+
+- Passwords cannot be read via process memory dump
+- Only encrypted format exists in memory
+
+---
+
+## Data Protection
+
+### 1. API Response Security
+
+**Feature:** Passwords are never sent in API responses.
+
+**Implementation:**
+
+- All API endpoints use `sanitize_server_data()` function
+- Password field is automatically removed from response
+- Only `has_password` boolean flag is sent
+
+**Affected Endpoints:**
+
+- `GET /api/servers` - All servers
+- `GET /api/servers/:id` - Single server
+- `GET /api/projects/:id/servers` - Project servers
 - `GET /api/credentials` - Default credentials
 
-### 2. Database Erişim Kontrolü
+### 2. Database Access Control
 
-**Özellik:** Database dosyasına erişim kontrolü.
+**Feature:** Database file access control.
 
-**Konumlar:**
-- **Development:** Uygulama dizininde geçici database
-- **Production:** Kullanıcı profilinde güvenli konum
+**Locations:**
 
-**Koruma:**
-- Database dosyası sadece uygulama tarafından yazılır
-- Windows: Kullanıcı bazlı erişim kontrolü
+- Development: Temporary database in application directory
+- Production: Secure location in user profile
+
+**Protection:**
+
+- Database file is only written by the application
+- Windows: User-based access control
 - Linux: File permissions (600 - owner only)
 
-### 3. Log Güvenliği
+### 3. Log Security
 
-**Özellik:** Log dosyalarında şifreler **asla** loglanmaz.
+**Feature:** Passwords are never logged in log files.
 
-**Uygulama:**
-- Tüm log mesajları password içermez
-- Hata mesajlarında şifre bilgisi gösterilmez
-- Log dosyaları: `%APPDATA%\ServerScout\logs\`
+**Implementation:**
+
+- All log messages do not contain passwords
+- Error messages do not show password information
+- Log files: `%APPDATA%\ServerScout\logs\`
 
 ---
 
-## 🌐 Ağ Güvenliği
+## Network Security
 
-### 1. HTTPS Desteği
+### 1. HTTPS Support
 
-**Özellik:** HTTPS **varsayılan olarak aktif** - tüm bağlantılar şifreli.
+**Feature:** HTTPS is active by default - all connections are encrypted.
 
-**Konfigürasyon:**
-- **HTTPS (Varsayılan):** `https://127.0.0.1:5000` (self-signed certificate)
-- **HTTP (Opsiyonel):** `USE_HTTPS=false` environment variable ile devre dışı bırakılabilir
-- **Production:** Gerçek SSL sertifikası kullanın (Let's Encrypt, kurumsal sertifika)
+**Configuration:**
 
-**Güvenlik Özellikleri:**
-- ✅ Tüm API trafiği şifreli (HTTPS)
-- ✅ Self-signed certificate localhost için güvenli
-- ✅ Electron otomatik olarak self-signed cert'i kabul eder
-- ✅ Browser'da "Advanced" > "Continue" ile geçilebilir (localhost için normal)
+- HTTPS (Default): `https://127.0.0.1:5000` (self-signed certificate)
+- HTTP (Optional): Can be disabled with `USE_HTTPS=false` environment variable
+- Production: Use real SSL certificate (Let's Encrypt, corporate certificate)
+
+**Security Features:**
+
+- All API traffic is encrypted (HTTPS)
+- Self-signed certificate is safe for localhost
+- Electron automatically accepts self-signed certificate
+- Can be bypassed in browser with "Advanced" > "Continue" (normal for localhost)
 
 **Production Deployment:**
-- Production'da gerçek SSL sertifikası kullanılmalıdır
-- Self-signed certificate sadece localhost/development için uygundur
-- SSL sertifikası konfigürasyonu için `app.py` dosyasına bakın
+
+- Real SSL certificate should be used in production
+- Self-signed certificate is only suitable for localhost/development
+- See `app.py` file for SSL certificate configuration
 
 ### 2. Localhost Binding
 
-**Özellik:** Backend server varsayılan olarak `localhost` üzerinde çalışır.
+**Feature:** Backend server runs on `localhost` by default.
 
-**Konfigürasyon:**
-- HTTP: `0.0.0.0:5000` (tüm interface'ler)
-- HTTPS: `127.0.0.1:5000` (sadece localhost, daha güvenli)
+**Configuration:**
 
-**Güvenlik Notu:**
-- Uygulama localhost'ta çalıştığı için network trafiği sadece local
-- HTTPS ile ekstra güvenlik katmanı
+- HTTP: `0.0.0.0:5000` (all interfaces)
+- HTTPS: `127.0.0.1:5000` (localhost only, more secure)
+
+**Security Note:**
+
+- Application runs on localhost so network traffic is local only
+- HTTPS provides extra security layer
 
 ### 3. CORS (Cross-Origin Resource Sharing)
 
-**Özellik:** CORS aktif, ancak localhost için güvenli.
+**Feature:** CORS is active, but safe for localhost.
 
-**Konfigürasyon:**
-- `Flask-CORS` aktif
-- Localhost bağlantılarına izin verilir
+**Configuration:**
 
-**Production Önerisi:**
-- CORS'u sadece güvenilir domain'lere kısıtlayın
-- HTTPS kullanın (artık destekleniyor)
+- `Flask-CORS` is active
+- Localhost connections are allowed
 
-### 4. Tarama Protokolleri
+**Production Recommendation:**
+
+- Restrict CORS to trusted domains only
+- Use HTTPS (now supported)
+
+### 4. Scanning Protocols
 
 **Windows (WinRM):**
-- Port: 5985 (HTTP) veya 5986 (HTTPS)
+
+- Port: 5985 (HTTP) or 5986 (HTTPS)
 - Authentication: NTLM
-- **Güvenlik:** Network üzerinden şifre gönderilir (WinRM protokolü)
+- Security: Password is sent over network (WinRM protocol)
 
 **Linux (SSH):**
+
 - Port: 22
 - Authentication: Username/Password
-- **Güvenlik:** SSH protokolü şifreleri şifreler (SSH encryption)
+- Security: SSH protocol encrypts passwords (SSH encryption)
 
 ---
 
-## 🔐 Erişim Kontrolü
+## Access Control
 
-### 1. Uygulama Erişimi
+### 1. Application Access
 
-**Mevcut Durum:**
-- Uygulama açıldığında herkes erişebilir
-- Kullanıcı authentication yok
+**Current Status:**
 
-**Öneriler:**
-- Uygulamayı sadece **güvenilir kullanıcılar** çalıştırsın
-- Windows: Kullanıcı bazlı erişim kontrolü
-- Database dosyasına erişimi kısıtlayın
+- Anyone can access when application is opened
+- No user authentication
 
-### 2. Database Erişimi
+**Recommendations:**
 
-**Koruma:**
-- Database dosyası şifreli şifreler içerir
-- Key dosyası ayrı korunur
-- Her ikisi de aynı kullanıcı hesabına bağlı
+- Only trusted users should run the application
+- Windows: User-based access control
+- Restrict access to database file
+
+### 2. Database Access
+
+**Protection:**
+
+- Database file contains encrypted passwords
+- Key file is protected separately
+- Both are linked to the same user account
 
 **Risk:**
-- Eğer Windows kullanıcı hesabı ele geçirilirse, key decrypt edilebilir
-- **Öneri:** Güçlü Windows şifreleri kullanın
 
-### 3. Dosya İzinleri
+- If Windows user account is compromised, key can be decrypted
+- Recommendation: Use strong Windows passwords
+
+### 3. File Permissions
 
 **Windows:**
-- AppData klasörü kullanıcı bazlı
-- Diğer kullanıcılar erişemez
+
+- AppData folder is user-based
+- Other users cannot access
 
 **Linux:**
-- Key dosyası: `600` (owner read/write only)
+
+- Key file: `600` (owner read/write only)
 - Database: `600` (owner read/write only)
 
 ---
 
-## ⚠️ Risk Analizi
+## Risk Analysis
 
-### Yüksek Risk Senaryoları
+### High Risk Scenarios
 
-| Risk | Açıklama | Etki | Önlem |
-|------|----------|------|-------|
-| **Database Dosyası Erişimi** | Database dosyasına fiziksel erişim | Şifreler şifreli, ancak key ile decrypt edilebilir | Key dosyasını ayrı koruyun |
-| **Windows Kullanıcı Hesabı Ele Geçirilmesi** | Kullanıcı hesabı hack edilirse | Key decrypt edilebilir | Güçlü Windows şifreleri, 2FA |
-| **Memory Dump** | Process memory dump alınırsa | Şifreler memory'de şifreli, ancak decrypt edilebilir | Uygulama kapanınca temizlenir |
-| **Network Sniffing** | Localhost trafiği dinlenirse | HTTP üzerinden şifre gönderilir | Production'da HTTPS kullanın |
+**Database File Access**
 
-### Orta Risk Senaryoları
+- Description: Physical access to database file
+- Impact: Passwords are encrypted, but can be decrypted with key
+- Mitigation: Protect key file separately
 
-| Risk | Açıklama | Etki | Önlem |
-|------|----------|------|-------|
-| **Log Dosyaları** | Log dosyalarına erişim | Şifreler loglanmaz | Log dosyalarını koruyun |
-| **Excel Export** | Excel dosyalarına erişim | Excel'de şifre yok | Excel dosyalarını güvenli saklayın |
-| **Backup Dosyaları** | Backup'lara erişim | Database şifreli | Backup'ları şifreleyin |
+**Windows User Account Compromise**
 
-### Düşük Risk Senaryoları
+- Description: User account is hacked
+- Impact: Key can be decrypted
+- Mitigation: Strong Windows passwords, 2FA
 
-| Risk | Açıklama | Etki | Önlem |
-|------|----------|------|-------|
-| **Frontend Erişimi** | Web arayüzüne erişim | Localhost'ta çalışır | Sadece güvenilir kullanıcılar |
-| **API Erişimi** | API endpoint'lerine erişim | Password gönderilmez | Localhost binding |
+**Memory Dump**
+
+- Description: Process memory dump is taken
+- Impact: Passwords are encrypted in memory, but can be decrypted
+- Mitigation: Memory is cleared when application closes
+
+**Network Sniffing**
+
+- Description: Localhost traffic is monitored
+- Impact: Password is sent over HTTP
+- Mitigation: Use HTTPS in production
+
+### Medium Risk Scenarios
+
+**Log Files**
+
+- Description: Access to log files
+- Impact: Passwords are not logged
+- Mitigation: Protect log files
+
+**Excel Export**
+
+- Description: Access to Excel files
+- Impact: No passwords in Excel
+- Mitigation: Store Excel files securely
+
+**Backup Files**
+
+- Description: Access to backups
+- Impact: Database is encrypted
+- Mitigation: Encrypt backups
+
+### Low Risk Scenarios
+
+**Frontend Access**
+
+- Description: Access to web interface
+- Impact: Runs on localhost
+- Mitigation: Only trusted users
+
+**API Access**
+
+- Description: Access to API endpoints
+- Impact: Password is not sent
+- Mitigation: Localhost binding
 
 ---
 
-## ✅ Öneriler ve En İyi Uygulamalar
+## Recommendations and Best Practices
 
-### 1. Kullanım Önerileri
+### 1. Usage Recommendations
 
-✅ **YAPILMASI GEREKENLER:**
-- Uygulamayı sadece **güvenilir, yetkili kullanıcılar** çalıştırsın
-- Windows kullanıcı hesaplarında **güçlü şifreler** kullanın
-- Database ve key dosyalarının **backup'larını şifreleyin**
-- Uygulamayı kullanmadığınızda **kapatın**
-- Production'da **HTTPS** kullanın (opsiyonel)
-- Log dosyalarını **düzenli temizleyin**
+**DO:**
 
-❌ **YAPILMAMASI GEREKENLER:**
-- Uygulamayı **paylaşımlı bilgisayarlarda** çalıştırmayın
-- Database dosyasını **network share'de** saklamayın
-- Key dosyasını **başka yere kopyalamayın**
-- Şifreleri **manuel olarak** database'e yazmayın
-- Uygulamayı **internet'e açık** sunucuda çalıştırmayın
+- Only trusted, authorized users should run the application
+- Use strong passwords on Windows user accounts
+- Encrypt backups of database and key files
+- Close the application when not in use
+- Use HTTPS in production (optional)
+- Regularly clean log files
+
+**DON'T:**
+
+- Run the application on shared computers
+- Store database file on network share
+- Copy key file to another location
+- Manually write passwords to database
+- Run the application on internet-exposed server
 
 ### 2. Production Deployment
 
-**Varsayılan Konfigürasyon (HTTPS):**
+**Default Configuration (HTTPS):**
+
 ```bash
-# Electron (Önerilen)
+# Electron (Recommended)
 cd electron
 npm start
-# Otomatik olarak HTTPS ile başlar
+# Automatically starts with HTTPS
 
 # Python Backend (Development)
 cd backend
 python app.py
-# HTTPS varsayılan olarak aktif
+# HTTPS is active by default
 ```
 
-**HTTP'ye Geçiş (Sadece Development):**
+**Switch to HTTP (Development Only):**
+
 ```bash
 set USE_HTTPS=false
 python backend/app.py
 # http://127.0.0.1:5000
 ```
 
-**Production için Gerçek SSL Sertifikası:**
-- Production'da mutlaka gerçek SSL sertifikası kullanın
-- Let's Encrypt veya kurumsal sertifika kullanılabilir
-- SSL sertifikası konfigürasyonu için `app.py` dosyasına bakın
+**Real SSL Certificate for Production:**
 
-**Not:** Production'da mutlaka gerçek SSL sertifikası kullanın. Self-signed certificate sadece localhost/development için uygundur.
+- Must use real SSL certificate in production
+- Let's Encrypt or corporate certificate can be used
+- See `app.py` file for SSL certificate configuration
 
-### 3. Backup Stratejisi
+**Note:** Must use real SSL certificate in production. Self-signed certificate is only suitable for localhost/development.
 
-**ÖNEMLİ:** Veriler **geçici** - uygulama her başlangıçta database temizlenir!
+### 3. Backup Strategy
 
-**Neden Backup?**
-- Database dosyası bozulabilir (disk hatası, dosya corruption)
-- Yanlışlıkla silinebilir
-- Sistem çökmesi durumunda veri kaybı olabilir
+**IMPORTANT:** Data is temporary - database is cleared on each startup!
 
-**Backup Gerekli mi?**
+**Why Backup?**
 
-**HAYIR!** Veriler geçici olduğu için backup gerekmez:
-- Her başlangıçta database temizlenir
-- Veriler sadece session süresince saklanır
-- Excel export yapıldıktan sonra veriler silinir
+- Database file can be corrupted (disk error, file corruption)
+- Can be accidentally deleted
+- Data loss can occur in case of system crash
 
-**Eğer verileri saklamak isterseniz:**
-- Excel export dosyalarını yedekleyin (şifreler içermez)
-- Scan sonuçları Excel'de saklanır
-- Database backup'ına gerek yok (geçici veri)
+**Is Backup Required?**
 
-**Not:** Encryption key dosyası otomatik yönetilir (Windows DPAPI). Manuel backup gerekmez.
+**NO!** Backup is not required because data is temporary:
+- Database is cleared on each startup
+- Data is only kept during session
+- Data is deleted after Excel export
 
-### 4. Monitoring ve Audit
+**If you want to save data:**
 
-**Öneriler:**
-- Log dosyalarını **düzenli kontrol edin**
-- Şüpheli aktivite için **monitoring** ekleyin
-- Kullanıcı erişimlerini **loglayın** (opsiyonel)
-- Database erişimlerini **audit edin**
+- Backup Excel export files (no passwords included)
+- Scan results are stored in Excel
+- No need for database backup (temporary data)
 
-### 5. Güvenlik Güncellemeleri
+**Note:** Encryption key file is automatically managed (Windows DPAPI). Manual backup is not required.
 
-**Öneriler:**
-- Python ve kütüphaneleri **düzenli güncelleyin**
-- `cryptography` kütüphanesini **güncel tutun**
-- Güvenlik açıklarını **takip edin**
-- **Penetration test** yapın (opsiyonel)
+### 4. Monitoring and Audit
 
----
+**Recommendations:**
 
-## 📊 Güvenlik Özeti
+- Regularly check log files
+- Add monitoring for suspicious activity
+- Log user access (optional)
+- Audit database access
 
-### Güçlü Yönler ✅
+### 5. Security Updates
 
-1. **Database Şifreleme:** AES-128 ile tüm şifreler şifreli
-2. **Key Koruması:** Windows DPAPI ile key korunuyor
-3. **Memory Güvenliği:** Default credentials memory'de şifreli
-4. **API Güvenliği:** Response'larda password yok
-5. **Industry Standard:** NIST onaylı encryption algoritmaları
+**Recommendations:**
 
-### İyileştirme Alanları 🔄
-
-1. ~~**HTTPS:** Production için HTTPS eklenebilir~~ ✅ **TAMAMLANDI**
-2. **Authentication:** Kullanıcı authentication eklenebilir
-3. **Audit Logging:** Detaylı audit log eklenebilir
-4. **Key Rotation:** Key rotation mekanizması eklenebilir
-5. **2FA:** İki faktörlü kimlik doğrulama eklenebilir
-6. **Production SSL:** Gerçek SSL sertifikası kullanımı (Let's Encrypt vb.)
+- Regularly update Python and libraries
+- Keep `cryptography` library up to date
+- Track security vulnerabilities
+- Perform penetration testing (optional)
 
 ---
 
-## 🔍 Teknik Detaylar
+## Security Summary
 
-### Şifreleme Akışı
+### Strong Points
 
-```
-1. Kullanıcı şifre girer (UI)
-   ↓
-2. Frontend → Backend API (HTTPS üzerinden)
-   ↓
-3. encrypt_password() fonksiyonu çağrılır
-   ↓
-4. Fernet (AES-128) ile şifreleme
-   ↓
+1. Database Encryption: All passwords encrypted with AES-128
+2. Key Protection: Key protected with Windows DPAPI
+3. Memory Security: Default credentials encrypted in memory
+4. API Security: No password in responses
+5. Industry Standard: NIST approved encryption algorithms
+
+### Areas for Improvement
+
+1. HTTPS: Production HTTPS support - COMPLETED
+2. Authentication: User authentication can be added
+3. Audit Logging: Detailed audit log can be added
+4. Key Rotation: Key rotation mechanism can be added
+5. 2FA: Two-factor authentication can be added
+6. Production SSL: Real SSL certificate usage (Let's Encrypt, etc.)
+
+---
+
+## Technical Details
+
+### Encryption Flow
+
+1. User enters password (UI)
+2. Frontend → Backend API (over HTTPS)
+3. `encrypt_password()` function is called
+4. Encryption with Fernet (AES-128)
 5. Base64 encoding
-   ↓
-6. Database'e kaydedilir (şifreli format)
-   ↓
-7. Okuma sırasında decrypt_password() ile decrypt
-   ↓
-8. API response'unda password alanı kaldırılır (sanitize_server_data)
-```
+6. Saved to database (encrypted format)
+7. Decrypted with `decrypt_password()` during read
+8. Password field removed from API response (`sanitize_server_data`)
 
-### Key Yönetimi Prensibi
+### Key Management Principle
 
-**Windows Ortamı:**
-- Encryption key, Windows DPAPI (Data Protection API) ile korunur
-- Key, sadece aynı Windows kullanıcı hesabı tarafından decrypt edilebilir
-- Key dosyası kullanıcı profilinde saklanır
-- **Güvenlik:** Key, Windows kullanıcı kimlik doğrulamasına bağlıdır
+**Windows Environment:**
 
-**Linux/Mac Ortamı:**
-- Encryption key, sistem-specific master key ile şifrelenir
-- Master key, kullanıcı ve sistem bilgilerinden türetilir
-- Key dosyası sadece owner tarafından okunabilir (600 permissions)
-- **Güvenlik:** Key, sistem ve kullanıcıya özgüdür
+- Encryption key is protected with Windows DPAPI (Data Protection API)
+- Key can only be decrypted by the same Windows user account
+- Key file is stored in user profile
+- Security: Key is linked to Windows user authentication
 
-**Not:** Detaylı implementation bilgileri güvenlik nedeniyle paylaşılmamaktadır.
+**Linux/Mac Environment:**
 
-### Güvenlik Katmanları
+- Encryption key is encrypted with system-specific master key
+- Master key is derived from user and system information
+- Key file is readable only by owner (600 permissions)
+- Security: Key is specific to system and user
 
-```
-Layer 1: HTTPS (Transport Security)
-  ↓ Tüm trafik şifreli
-Layer 2: Database Encryption (Storage Security)
-  ↓ Şifreler AES-128 ile şifreli
-Layer 3: Key Protection (Key Security)
-  ↓ Key Windows DPAPI ile korunuyor
-Layer 4: API Sanitization (Response Security)
-  ↓ Password response'larda yok
-Layer 5: Memory Safety (Runtime Security)
-  ↓ Default creds memory'de şifreli
-Layer 6: Temporary Data (Data Lifecycle)
-  ↓ Her başlangıçta temizlenir
-```
+**Note:** Detailed implementation information is not shared for security reasons.
+
+### Security Layers
+
+- Layer 1: HTTPS (Transport Security) - All traffic encrypted
+- Layer 2: Database Encryption (Storage Security) - Passwords encrypted with AES-128
+- Layer 3: Key Protection (Key Security) - Key protected with Windows DPAPI
+- Layer 4: API Sanitization (Response Security) - No password in responses
+- Layer 5: Memory Safety (Runtime Security) - Default creds encrypted in memory
+- Layer 6: Temporary Data (Data Lifecycle) - Cleared on each startup
 
 ---
 
-## 🔬 Güvenlik Testleri
+## Security Tests
 
-### Test Senaryoları
+### Test Scenarios
 
-**1. Database Dosyası Erişimi Testi:**
-- Database dosyasına erişim sağlansa bile, şifreler şifreli format'ta saklanır
-- Encryption key olmadan şifreler decrypt edilemez
-- **Sonuç:** Database ele geçirilse bile şifreler korunur
+**1. Database File Access Test:**
 
-**2. Key Dosyası Erişimi Testi:**
-- Key dosyası başka bir sisteme kopyalansa bile decrypt edilemez
-- Windows DPAPI: Key, kullanıcı hesabına bağlıdır
-- Linux/Mac: Key, sistem ve kullanıcıya özgüdür
-- **Sonuç:** Key dosyası tek başına yeterli değildir
+- Even if database file is accessed, passwords are stored in encrypted format
+- Passwords cannot be decrypted without encryption key
+- Result: Passwords are protected even if database is compromised
 
-**3. API Response Testi:**
-- API response'larında password alanı bulunmaz
-- Sadece `has_password` boolean flag'i gönderilir
-- **Sonuç:** API trafiği güvenlidir
+**2. Key File Access Test:**
 
-**4. Memory Dump Testi:**
-- Process memory dump alınsa bile, default credentials şifreli format'ta saklanır
-- **Sonuç:** Memory dump ile şifreler okunamaz
+- Even if key file is copied to another system, it cannot be decrypted
+- Windows DPAPI: Key is linked to user account
+- Linux/Mac: Key is specific to system and user
+- Result: Key file alone is not sufficient
 
-## 📞 Destek ve Sorular
+**3. API Response Test:**
 
-Güvenlik ile ilgili sorularınız için:
-- **Genel Güvenlik:** Bu dokümantasyon
-- **Key Yönetimi:** `ENCRYPTION-KEY-EXPLANATION.md`
-- **Database Kullanımı:** `DATABASE-EXPLANATION.md`
+- Password field is not found in API responses
+- Only `has_password` boolean flag is sent
+- Result: API traffic is secure
 
-**Not:** Detaylı implementation kodları ve güvenlik mekanizmaları güvenlik nedeniyle paylaşılmamaktadır. Güvenlik soruları için lütfen proje maintainer'ları ile iletişime geçin.
+**4. Memory Dump Test:**
 
----
+- Even if process memory dump is taken, default credentials are stored in encrypted format
+- Result: Passwords cannot be read via memory dump
 
----
+## Support and Questions
 
-## 📋 Güvenlik Özet Tablosu
+For security-related questions:
 
-| Özellik | Durum | Açıklama |
-|---------|-------|----------|
-| **Database Şifreleme** | ✅ Aktif | AES-128 (Fernet) |
-| **Key Koruması** | ✅ Aktif | Windows DPAPI |
-| **HTTPS** | ✅ Varsayılan | Self-signed (localhost) |
-| **API Sanitization** | ✅ Aktif | Password response'larda yok |
-| **Memory Güvenliği** | ✅ Aktif | Default creds şifreli |
-| **Veri Kalıcılığı** | ❌ Yok | Her başlangıçta temizlenir |
-| **Log Güvenliği** | ✅ Aktif | Şifreler loglanmaz |
-| **Excel Export Güvenliği** | ✅ Aktif | Şifreler export'ta yok |
+- General Security: This documentation
+- Key Management: `ENCRYPTION-KEY-EXPLANATION.md`
+- Database Usage: `DATABASE-EXPLANATION.md`
+
+**Note:** Detailed implementation code and security mechanisms are not shared for security reasons. Please contact project maintainers for security questions.
 
 ---
 
-**Son Güncelleme:** 2025-12-21  
-**Güvenlik Seviyesi:** YÜKSEK ✅  
-**Production Ready:** EVET ✅  
-**HTTPS:** Varsayılan ✅  
-**Veri Kalıcılığı:** Geçici (Güvenlik için) ✅
+## Security Summary Table
 
+- Database Encryption: Active - AES-128 (Fernet)
+- Key Protection: Active - Windows DPAPI
+- HTTPS: Default - Self-signed (localhost)
+- API Sanitization: Active - No password in responses
+- Memory Security: Active - Default creds encrypted
+- Data Persistence: None - Cleared on each startup
+- Log Security: Active - Passwords not logged
+- Excel Export Security: Active - No passwords in export
+
+---
+
+**Last Update:** 2025-12-21  
+**Security Level:** HIGH  
+**Production Ready:** YES  
+**HTTPS:** Default  
+**Data Persistence:** Temporary (for security)
