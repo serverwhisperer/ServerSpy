@@ -464,6 +464,11 @@ def api_rename_project(proj_id):
             return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
         
         name = data.get('name', '').strip()
+        
+        # Validate project name
+        is_valid, error_msg = validate_project_name(name)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
         if not name:
             return jsonify({'success': False, 'error': 'Project name is required'}), 400
         
