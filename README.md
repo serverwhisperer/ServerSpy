@@ -105,13 +105,19 @@ ServerScout/
 
 ## 🔒 Security Features
 
-- **HTTPS by Default:** All connections encrypted (self-signed certificate for localhost)
-- **Password Encryption:** All passwords encrypted with AES-128 (Fernet)
-- **Temporary Data:** Database cleared on each startup (session-based)
-- **No Persistent Storage:** Data is only kept during application session
-- **Windows DPAPI:** Encryption keys protected with Windows Data Protection API
+ServerScout implements **enterprise-grade security** for protecting sensitive credentials:
 
-See [SECURITY.md](SECURITY.md) for detailed security documentation.
+- **🔐 Password Encryption:** All passwords encrypted with AES-128 (Fernet) - Industry standard
+- **🔑 Key Protection:** Encryption keys protected with Windows DPAPI (Windows) or system-derived keys (Linux/Mac)
+- **🌐 HTTPS by Default:** All connections encrypted with self-signed certificate (localhost)
+- **🛡️ API Security:** Passwords never sent in API responses - automatic sanitization
+- **💾 Memory Safety:** Default credentials stored encrypted in memory
+- **🗑️ Temporary Data:** Database cleared on each startup - no persistent storage
+- **📝 Secure Logging:** Passwords never logged - secure error handling
+
+**Security Level: HIGH** ✅
+
+See [SECURITY.md](SECURITY.md) for comprehensive security documentation.
 
 ## 🔧 Server Configuration
 

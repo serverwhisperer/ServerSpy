@@ -109,26 +109,25 @@ ServerScout, **production ortamında kullanıma uygun** güvenlik özellikleri i
 
 ### 1. HTTPS Desteği
 
-**Özellik:** HTTPS desteği eklendi (opsiyonel).
-
-**Kullanım:**
-```bash
-# HTTPS ile başlatmak için:
-set USE_HTTPS=true
-python backend/app.py
-
-# Veya start-https.bat kullanın
-```
+**Özellik:** HTTPS **varsayılan olarak aktif** - tüm bağlantılar şifreli.
 
 **Konfigürasyon:**
-- **HTTP (varsayılan):** `http://localhost:5000`
-- **HTTPS (opsiyonel):** `https://localhost:5000` (self-signed certificate)
-- **Production:** Gerçek SSL sertifikası kullanın
+- **HTTPS (Varsayılan):** `https://127.0.0.1:5000` (self-signed certificate)
+- **HTTP (Opsiyonel):** `USE_HTTPS=false` environment variable ile devre dışı bırakılabilir
+- **Production:** Gerçek SSL sertifikası kullanın (Let's Encrypt, kurumsal sertifika)
 
-**Güvenlik Notu:**
-- HTTPS ile tüm trafik şifrelenir
-- Self-signed certificate development için uygundur
-- Production'da Let's Encrypt veya kurumsal sertifika kullanın
+**Güvenlik Özellikleri:**
+- ✅ Tüm API trafiği şifreli (HTTPS)
+- ✅ Self-signed certificate localhost için güvenli
+- ✅ Electron otomatik olarak self-signed cert'i kabul eder
+- ✅ Browser'da "Advanced" > "Continue" ile geçilebilir (localhost için normal)
+
+**Production Deployment:**
+```python
+# app.py'de gerçek SSL sertifikası kullanımı:
+app.run(host='127.0.0.1', port=5000, 
+        ssl_context=('/path/to/cert.pem', '/path/to/key.pem'))
+```
 
 ### 2. Localhost Binding
 
@@ -253,47 +252,57 @@ python backend/app.py
 
 ### 2. Production Deployment
 
-**Önerilen Konfigürasyon:**
-
-**HTTP (varsayılan):**
+**Varsayılan Konfigürasyon (HTTPS):**
 ```bash
-python backend/app.py
-# http://localhost:5000
+# Electron (Önerilen)
+cd electron
+npm start
+# Otomatik olarak HTTPS ile başlar
+
+# Python Backend (Development)
+cd backend
+python app.py
+# HTTPS varsayılan olarak aktif
 ```
 
-**HTTPS (önerilen):**
+**HTTP'ye Geçiş (Sadece Development):**
 ```bash
-set USE_HTTPS=true
+set USE_HTTPS=false
 python backend/app.py
-# https://localhost:5000
+# http://127.0.0.1:5000
 ```
 
 **Production için Gerçek SSL Sertifikası:**
 ```python
 # app.py'de ssl_context parametresini değiştirin:
-app.run(host='127.0.0.1', port=5000, ssl_context=('/path/to/cert.pem', '/path/to/key.pem'))
+app.run(host='127.0.0.1', port=5000, 
+        ssl_context=('/path/to/cert.pem', '/path/to/key.pem'))
 ```
+
+**Not:** Production'da mutlaka gerçek SSL sertifikası kullanın. Self-signed certificate sadece localhost/development için uygundur.
 
 ### 3. Backup Stratejisi
 
-**ÖNEMLİ:** Veriler artık **kalıcı** - uygulama kapanınca silinmiyor!
+**ÖNEMLİ:** Veriler **geçici** - uygulama her başlangıçta database temizlenir!
 
 **Neden Backup?**
 - Database dosyası bozulabilir (disk hatası, dosya corruption)
 - Yanlışlıkla silinebilir
 - Sistem çökmesi durumunda veri kaybı olabilir
 
-**Backup Önerileri:**
-- Database dosyasını (`inventory.db`) **düzenli yedekleyin**
-- Key dosyasını (`.encryption_key`) **ayrı yedekleyin** (güvenli yerde)
-- Backup'ları **encrypted storage**'da saklayın (şifreler zaten şifreli ama ekstra güvenlik)
-- Backup'ları **düzenli test edin** (restore testi yapın)
+**Backup Gerekli mi?**
 
-**Backup Konumları:**
-- Database: `%APPDATA%\ServerScout\data\inventory.db`
-- Key: `%APPDATA%\ServerScout\data\.encryption_key`
+**HAYIR!** Veriler geçici olduğu için backup gerekmez:
+- Her başlangıçta database temizlenir
+- Veriler sadece session süresince saklanır
+- Excel export yapıldıktan sonra veriler silinir
 
-**Not:** Database'deki şifreler **zaten şifreli**, ama key dosyası olmadan decrypt edilemezler. Her ikisini de yedekleyin!
+**Eğer verileri saklamak isterseniz:**
+- Excel export dosyalarını yedekleyin (şifreler içermez)
+- Scan sonuçları Excel'de saklanır
+- Database backup'ına gerek yok (geçici veri)
+
+**Not:** Encryption key dosyası otomatik yönetilir (Windows DPAPI). Manuel backup gerekmez.
 
 ### 4. Monitoring ve Audit
 
@@ -377,9 +386,26 @@ Güvenlik ile ilgili sorularınız için:
 
 ---
 
+---
+
+## 📋 Güvenlik Özet Tablosu
+
+| Özellik | Durum | Açıklama |
+|---------|-------|----------|
+| **Database Şifreleme** | ✅ Aktif | AES-128 (Fernet) |
+| **Key Koruması** | ✅ Aktif | Windows DPAPI |
+| **HTTPS** | ✅ Varsayılan | Self-signed (localhost) |
+| **API Sanitization** | ✅ Aktif | Password response'larda yok |
+| **Memory Güvenliği** | ✅ Aktif | Default creds şifreli |
+| **Veri Kalıcılığı** | ❌ Yok | Her başlangıçta temizlenir |
+| **Log Güvenliği** | ✅ Aktif | Şifreler loglanmaz |
+| **Excel Export Güvenliği** | ✅ Aktif | Şifreler export'ta yok |
+
+---
+
 **Son Güncelleme:** 2025-12-21  
 **Güvenlik Seviyesi:** YÜKSEK ✅  
 **Production Ready:** EVET ✅  
-**HTTPS Desteği:** EVET ✅ (Varsayılan)  
-**Veri Kalıcılığı:** HAYIR ❌ (Her başlangıçta temizlenir - güvenlik için)
+**HTTPS:** Varsayılan ✅  
+**Veri Kalıcılığı:** Geçici (Güvenlik için) ✅
 
