@@ -60,13 +60,11 @@ electron/node_modules/
 package-lock.json
 electron/package-lock.json
 
-# Build outputs (except release executables)
+# Build outputs
 backend/dist/
 backend/build/
-electron/dist/win-unpacked/
-electron/dist/*.blockmap
-electron/dist/builder-debug.yml
-
-# Keep release executables
-!electron/dist/ServerScout-*.exe
+electron/dist/
+*.exe
+*.blockmap
+*.yml
 
