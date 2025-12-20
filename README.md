@@ -85,23 +85,31 @@ ServerScout collects the same data as legacy VBScript inventory systems:
 
 ```
 ServerScout/
-├── backend/
-│   ├── app.py              # Flask main application
-│   ├── scanner.py          # Scanning logic (Windows + Linux)
-│   ├── database.py         # SQLite operations
-│   ├── excel_export.py     # Excel generation
+├── backend/                 # Python Flask Backend
+│   ├── app.py              # Main Flask application (API routes)
+│   ├── config.py           # Configuration settings
+│   ├── database.py         # SQLite database operations
+│   ├── encryption.py       # Password encryption (AES-128)
+│   ├── scanner.py          # Server scanning (Windows/Linux)
+│   ├── excel_export.py      # Excel report generation
 │   └── requirements.txt    # Python dependencies
-├── frontend/
-│   ├── index.html          # Main page
+├── frontend/               # Web Frontend
+│   ├── index.html          # Main HTML page
 │   ├── style.css           # Styling
-│   └── script.js           # Frontend logic
-├── data/
-│   └── inventory.db        # SQLite database (auto-created)
-├── exports/                # Excel export folder
-├── build.bat               # PyInstaller build script
+│   └── script.js           # JavaScript logic
+├── electron/               # Electron Desktop App
+│   ├── main.js             # Electron main process
+│   ├── package.json        # Node.js dependencies
+│   └── icon.ico            # Application icon
+├── data/                   # Database files (gitignore)
+│   └── inventory.db        # SQLite database (temporary)
+├── logs/                   # Log files (gitignore)
+├── build-all.bat           # Build script (all versions)
 ├── start.bat               # Quick start script
 └── README.md               # This file
 ```
+
+See [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md) for detailed architecture documentation.
 
 ## 🔒 Security Features
 
