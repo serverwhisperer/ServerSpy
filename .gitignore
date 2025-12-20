@@ -54,3 +54,16 @@ Thumbs.db
 .env
 .env.local
 
+# Node modules
+node_modules/
+electron/node_modules/
+package-lock.json
+electron/package-lock.json
+
+# Build outputs
+backend/dist/
+backend/build/
+electron/dist/
+*.exe
+*.blockmap
+
