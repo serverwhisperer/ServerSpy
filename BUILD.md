@@ -105,3 +105,6 @@ Current Version: **1.2.0**
 To update version, edit:
 - `electron\package.json` → `"version": "1.2.0"`
 
+
+
+

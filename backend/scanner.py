@@ -1,7 +1,4 @@
-"""
-Scanner module for ServerScout
-Handles Windows (WinRM) and Linux (SSH) server scanning
-"""
+# Server scanning - Windows (WinRM) and Linux (SSH)
 
 import paramiko
 import winrm
@@ -11,58 +8,52 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class WindowsScanner:
-    """Scanner for Windows servers using WinRM"""
+    # Windows server scanner via WinRM
     
-    def __init__(self, ip, username, password):
+    def __init__(self, ip, user, pwd):
         self.ip = ip
-        self.username = username
-        self.password = password
+        self.username = user
+        self.password = pwd
         self.session = None
     
     def connect(self):
-        """Establish WinRM connection"""
+        # Try HTTP first, then HTTPS
         try:
-            self.session = winrm.Session(
-                f'http://{self.ip}:5985/wsman',
-                auth=(self.username, self.password),
-                transport='ntlm'
-            )
-            # Test connection
-            result = self.session.run_ps('$env:COMPUTERNAME')
-            if result.status_code != 0:
-                raise Exception("Failed to connect via WinRM")
+            self.session = winrm.Session(f'http://{self.ip}:5985/wsman',
+                                        auth=(self.username, self.password),
+                                        transport='ntlm')
+            # Test it
+            r = self.session.run_ps('$env:COMPUTERNAME')
+            if r.status_code != 0:
+                raise Exception("WinRM connect failed")
             return True
         except Exception as e:
             # Try HTTPS
             try:
-                self.session = winrm.Session(
-                    f'https://{self.ip}:5986/wsman',
-                    auth=(self.username, self.password),
-                    transport='ntlm',
-                    server_cert_validation='ignore'
-                )
-                result = self.session.run_ps('$env:COMPUTERNAME')
-                if result.status_code != 0:
-                    raise Exception("Failed to connect via WinRM")
+                self.session = winrm.Session(f'https://{self.ip}:5986/wsman',
+                                            auth=(self.username, self.password),
+                                            transport='ntlm',
+                                            server_cert_validation='ignore')
+                r = self.session.run_ps('$env:COMPUTERNAME')
+                if r.status_code != 0:
+                    raise Exception("WinRM connect failed")
                 return True
             except Exception as e2:
-                raise Exception(f"WinRM connection failed: {str(e)} / {str(e2)}")
+                raise Exception(f"WinRM failed: {str(e)} / {str(e2)}")
     
-    def run_powershell(self, command):
-        """Execute a PowerShell command and return output"""
+    def run_powershell(self, cmd):
         try:
-            result = self.session.run_ps(command)
-            if result.status_code == 0:
-                return result.std_out.decode('utf-8', errors='ignore').strip()
+            r = self.session.run_ps(cmd)
+            if r.status_code == 0:
+                return r.std_out.decode('utf-8', errors='ignore').strip()
             return None
-        except Exception:
+        except:
             return None
     
     def scan(self):
-        """Perform full scan of Windows server"""
         data = {}
         
-        # Computer Name
+        # Hostname
         data['hostname'] = self.run_powershell('$env:COMPUTERNAME')
         
         # Domain
@@ -182,39 +173,31 @@ class WindowsScanner:
 
 
 class LinuxScanner:
-    """Scanner for Linux servers using SSH"""
+    # Linux server scanner via SSH
     
-    def __init__(self, ip, username, password):
+    def __init__(self, ip, user, pwd):
         self.ip = ip
-        self.username = username
-        self.password = password
+        self.username = user
+        self.password = pwd
         self.client = None
     
     def connect(self):
-        """Establish SSH connection"""
         try:
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.client.connect(
-                self.ip,
-                username=self.username,
-                password=self.password,
-                timeout=30
-            )
+            self.client.connect(self.ip, username=self.username, password=self.password, timeout=30)
             return True
         except Exception as e:
-            raise Exception(f"SSH connection failed: {str(e)}")
+            raise Exception(f"SSH failed: {str(e)}")
     
-    def run_command(self, command):
-        """Execute a command and return output"""
+    def run_command(self, cmd):
         try:
-            stdin, stdout, stderr = self.client.exec_command(command, timeout=30)
+            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=30)
             return stdout.read().decode('utf-8', errors='ignore').strip()
-        except Exception:
+        except:
             return None
     
     def close(self):
-        """Close SSH connection"""
         if self.client:
             self.client.close()
     
@@ -345,132 +328,78 @@ class LinuxScanner:
         return data
 
 
-def check_port(ip, port, timeout=3):
-    """Check if a port is open"""
+def check_port(ip_addr, port_num, timeout=3):
+    # Check if port is open
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        result = sock.connect_ex((ip, port))
-        sock.close()
-        return result == 0
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        r = s.connect_ex((ip_addr, port_num))
+        s.close()
+        return r == 0
     except:
         return False
 
 
-def detect_os_type(ip, timeout=3):
-    """
-    Detect OS type by checking open ports
-    
-    Returns:
-        'Windows' if WinRM ports are open (5985/5986)
-        'Linux' if SSH port is open (22)
-        'Windows' as default fallback
-    """
-    # Check WinRM ports first (Windows)
-    if check_port(ip, 5985, timeout) or check_port(ip, 5986, timeout):
+def detect_os_type(ip_addr, timeout=3):
+    # Try to figure out if it's Windows or Linux
+    if check_port(ip_addr, 5985, timeout) or check_port(ip_addr, 5986, timeout):
         return 'Windows'
-    
-    # Check SSH port (Linux)
-    if check_port(ip, 22, timeout):
+    if check_port(ip_addr, 22, timeout):
         return 'Linux'
-    
-    # Default to Windows if can't detect
-    return 'Windows'
+    return 'Windows'  # default
 
 
-def scan_server(server):
-    """
-    Scan a single server based on OS type
-    
-    Args:
-        server: dict with keys: id, ip, username, password, os_type
-    
-    Returns:
-        dict with scan results or error status
-    """
-    ip = server['ip']
-    username = server['username']
-    password = server['password']
-    os_type = server['os_type'].lower()
+def scan_server(srv):
+    # Scan one server
+    ip = srv['ip']
+    user = srv['username']
+    pwd = srv['password']
+    os_t = srv['os_type'].lower()
     
     try:
-        if os_type == 'windows':
-            # Check if WinRM ports are accessible
+        if os_t == 'windows':
+            # Check ports
             if not check_port(ip, 5985) and not check_port(ip, 5986):
-                return {
-                    'id': server['id'],
-                    'status': 'Offline',
-                    'error': 'WinRM ports (5985/5986) not accessible'
-                }
+                return {'id': srv['id'], 'status': 'Offline', 'error': 'WinRM ports not accessible'}
             
-            scanner = WindowsScanner(ip, username, password)
-            scanner.connect()
-            result = scanner.scan()
-            result['id'] = server['id']
-            return result
+            s = WindowsScanner(ip, user, pwd)
+            s.connect()
+            res = s.scan()
+            res['id'] = srv['id']
+            return res
             
-        elif os_type == 'linux':
-            # Check if SSH port is accessible
+        elif os_t == 'linux':
             if not check_port(ip, 22):
-                return {
-                    'id': server['id'],
-                    'status': 'Offline',
-                    'error': 'SSH port (22) not accessible'
-                }
+                return {'id': srv['id'], 'status': 'Offline', 'error': 'SSH port not accessible'}
             
-            scanner = LinuxScanner(ip, username, password)
-            scanner.connect()
-            result = scanner.scan()
-            scanner.close()
-            result['id'] = server['id']
-            return result
+            s = LinuxScanner(ip, user, pwd)
+            s.connect()
+            res = s.scan()
+            s.close()
+            res['id'] = srv['id']
+            return res
             
         else:
-            return {
-                'id': server['id'],
-                'status': 'Offline',
-                'error': f'Unknown OS type: {os_type}'
-            }
+            return {'id': srv['id'], 'status': 'Offline', 'error': f'Unknown OS: {os_t}'}
             
     except Exception as e:
-        return {
-            'id': server['id'],
-            'status': 'Offline',
-            'error': str(e)
-        }
+        return {'id': srv['id'], 'status': 'Offline', 'error': str(e)}
 
 
-def scan_all_servers(servers, max_workers=10):
-    """
-    Scan multiple servers in parallel
-    
-    Args:
-        servers: list of server dicts
-        max_workers: number of parallel workers
-    
-    Returns:
-        list of scan results
-    """
+def scan_all_servers(servers_list, max_workers=10):
+    # Scan multiple servers in parallel
     results = []
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_server = {
-            executor.submit(scan_server, server): server
-            for server in servers
-        }
+    with ThreadPoolExecutor(max_workers=max_workers) as exec:
+        futures = {exec.submit(scan_server, s): s for s in servers_list}
         
-        for future in as_completed(future_to_server):
-            server = future_to_server[future]
+        for fut in as_completed(futures):
+            srv = futures[fut]
             try:
-                result = future.result()
-                results.append(result)
+                res = fut.result()
+                results.append(res)
             except Exception as e:
-                results.append({
-                    'id': server['id'],
-                    'ip': server['ip'],
-                    'status': 'Offline',
-                    'error': str(e)
-                })
+                results.append({'id': srv['id'], 'ip': srv['ip'], 'status': 'Offline', 'error': str(e)})
     
     return results
 

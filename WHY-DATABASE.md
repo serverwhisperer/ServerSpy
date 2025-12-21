@@ -52,3 +52,6 @@ Hatalar şuraya yazılıyor:
 - **Packaged:** `%APPDATA%\ServerScout\logs\serverscout_YYYYMMDD.log`
 
 Log dosyasını kontrol ederek database hatalarını görebilirsiniz.
+
+
+

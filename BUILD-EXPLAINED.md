@@ -67,3 +67,6 @@ Veya manuel olarak:
 - `electron\dist\` klasörünü silin
 - `backend\dist\` klasörünü silin
 
+
+
+

@@ -80,12 +80,21 @@ function startBackendServer() {
             }
         };
 
+        let outputBuffer = '';
+        
         backendProcess.stdout.on('data', (data) => {
             const output = data.toString();
+            outputBuffer += output;
             console.log(`Backend: ${output}`);
             
-            // Detect when server is ready
-            if (output.includes('Running on') && !serverStarted) {
+            // Detect when server is ready (check for various Flask startup messages)
+            // Flask with HTTPS outputs: "Running on https://127.0.0.1:5000"
+            if ((output.includes('Running on') || 
+                 output.includes('Starting server') ||
+                 output.includes('WARNING: This is a development server') ||
+                 output.includes(' * Running on') ||
+                 output.includes('https://') ||
+                 output.includes('http://')) && !serverStarted) {
                 serverStarted = true;
                 cleanup();
                 resolve();
@@ -94,10 +103,17 @@ function startBackendServer() {
 
         backendProcess.stderr.on('data', (data) => {
             const output = data.toString();
+            outputBuffer += output;
             console.log(`Backend: ${output}`);
             
-            // Flask also outputs "Running on" to stderr sometimes
-            if (output.includes('Running on') && !serverStarted) {
+            // Flask outputs startup messages to stderr, especially with HTTPS
+            // Check for any indication that server started
+            if ((output.includes('Running on') || 
+                 output.includes('Starting server') ||
+                 output.includes('WARNING: This is a development server') ||
+                 output.includes(' * Running on') ||
+                 output.includes('https://') ||
+                 output.includes('http://')) && !serverStarted) {
                 serverStarted = true;
                 cleanup();
                 resolve();
@@ -155,8 +171,8 @@ function createWindow() {
         backgroundColor: '#0a0f1c'
     });
 
-    // Load the Flask server URL
-    mainWindow.loadURL(`http://localhost:${PORT}`);
+    // Load the Flask server URL (HTTPS for security)
+    mainWindow.loadURL(`https://localhost:${PORT}`);
 
     // Open external links in default browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -167,17 +183,31 @@ function createWindow() {
     // Handle page load errors
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
         console.error('Page load failed:', errorCode, errorDescription, validatedURL);
-        if (errorCode === -106) {
-            // ERR_INTERNET_DISCONNECTED or connection refused
-            dialog.showErrorBox(
-                'Connection Error',
-                `Cannot connect to backend server at http://localhost:${PORT}\n\n` +
-                `Error: ${errorDescription}\n\n` +
-                `Please check:\n` +
-                `1. Backend server is running\n` +
-                `2. Port ${PORT} is not blocked\n` +
-                `3. Check console for backend errors`
-            );
+        if (errorCode === -106 || errorCode === -501) {
+            // ERR_INTERNET_DISCONNECTED, connection refused, or SSL error
+            // SSL error (-501) is expected with self-signed cert, ignore it
+            if (errorCode === -106) {
+                dialog.showErrorBox(
+                    'Connection Error',
+                    `Cannot connect to backend server at https://localhost:${PORT}\n\n` +
+                    `Error: ${errorDescription}\n\n` +
+                    `Please check:\n` +
+                    `1. Backend server is running\n` +
+                    `2. Port ${PORT} is not blocked\n` +
+                    `3. Check console for backend errors`
+                );
+            }
+        }
+    });
+    
+    // Ignore certificate errors for self-signed certificate (localhost only)
+    mainWindow.webContents.on('certificate-error', (event, url, error, certificate, callback) => {
+        // Only ignore for localhost
+        if (url.startsWith('https://localhost:') || url.startsWith('https://127.0.0.1:')) {
+            event.preventDefault();
+            callback(true); // Accept self-signed certificate
+        } else {
+            callback(false); // Reject for other domains
         }
     });
 

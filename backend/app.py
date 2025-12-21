@@ -1,7 +1,4 @@
-"""
-ServerScout - Server Inventory Management Tool
-Main Flask application
-"""
+# ServerScout - Flask backend
 
 import os
 import sys
@@ -18,33 +15,21 @@ from flask_cors import CORS
 # Add backend directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Setup logging
 def setup_logging():
-    """Setup logging to file"""
     import sys
     
-    # Determine log directory
     if getattr(sys, 'frozen', False):
-        # Packaged mode - use AppData
         log_dir = os.path.join(os.getenv('APPDATA'), 'ServerScout', 'logs')
     else:
-        # Development mode - use project directory
         log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
     
-    # Create log directory if it doesn't exist
     os.makedirs(log_dir, exist_ok=True)
-    
-    # Log file path
     log_file = os.path.join(log_dir, f'serverscout_{datetime.now().strftime("%Y%m%d")}.log')
     
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)  # Also print to console
-        ]
+        handlers=[logging.FileHandler(log_file, encoding='utf-8'), logging.StreamHandler(sys.stdout)]
     )
     
     return log_file
@@ -69,23 +54,13 @@ from database import (
 )
 from scanner import scan_server, scan_all_servers, detect_os_type
 from excel_export import generate_excel_report, generate_project_excel_report, generate_all_projects_excel_report
+from encryption import encrypt_password, decrypt_password, sanitize_server_data
 
-# Determine frontend path
-# In packaged mode, Electron passes FRONTEND_PATH via environment variable
-FRONTEND_DIR = os.environ.get('FRONTEND_PATH')
-if not FRONTEND_DIR or not os.path.exists(FRONTEND_DIR):
-    # Fallback to relative path (works in development)
-    FRONTEND_DIR = '../frontend'
-    if getattr(sys, 'frozen', False):
-        # In packaged mode, try to find frontend relative to exe location
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        resources_dir = os.path.dirname(exe_dir)
-        alt_frontend = os.path.join(resources_dir, 'frontend')
-        if os.path.exists(alt_frontend):
-            FRONTEND_DIR = alt_frontend
-        else:
-            logging.warning(f"Frontend path not found. FRONTEND_PATH env: {os.environ.get('FRONTEND_PATH')}, exe_dir: {exe_dir}, trying: {alt_frontend}")
+# Import configuration
+from config import get_frontend_path, SERVER_HOST, SERVER_PORT, USE_HTTPS
 
+# Get frontend path from config
+FRONTEND_DIR = get_frontend_path()
 logging.info(f"Using frontend directory: {FRONTEND_DIR} (exists: {os.path.exists(FRONTEND_DIR)})")
 
 # Initialize Flask app
@@ -107,42 +82,37 @@ except Exception as e:
 
 
 
-# ==================== STATIC FILES ====================
+# Static files
 
 @app.route('/')
 def index():
-    """Serve the main page"""
     return send_from_directory(app.static_folder, 'index.html')
-
 
 @app.route('/<path:filename>')
 def serve_static(filename):
-    """Serve static files"""
     return send_from_directory(app.static_folder, filename)
 
 
-# ==================== CREDENTIALS STORAGE ====================
-# In-memory storage for default credentials (cleared on restart)
+# Default creds storage (in memory, encrypted)
 default_credentials = {
-    'windows': {'username': '', 'password': ''},
-    'linux': {'username': '', 'password': ''}
+    'windows': {'username': '', 'password_encrypted': ''},
+    'linux': {'username': '', 'password_encrypted': ''}
 }
 
 
 @app.route('/api/credentials', methods=['GET'])
 def api_get_credentials():
-    """Get stored default credentials (passwords hidden)"""
     try:
         return jsonify({
             'success': True,
             'credentials': {
                 'windows': {
                     'username': default_credentials['windows']['username'],
-                    'has_password': bool(default_credentials['windows']['password'])
+                    'has_password': bool(default_credentials['windows']['password_encrypted'])
                 },
                 'linux': {
                     'username': default_credentials['linux']['username'],
-                    'has_password': bool(default_credentials['linux']['password'])
+                    'has_password': bool(default_credentials['linux']['password_encrypted'])
                 }
             }
         })
@@ -152,52 +122,61 @@ def api_get_credentials():
 
 @app.route('/api/credentials', methods=['POST'])
 def api_save_credentials():
-    """Save default credentials for Windows or Linux"""
     try:
         data = request.get_json()
-        os_type = data.get('os_type', '').lower()
-        username = data.get('username', '')
-        password = data.get('password', '')
+        os_t = data.get('os_type', '').lower()
+        user = data.get('username', '')
+        pwd = data.get('password', '')
         
-        if os_type not in ['windows', 'linux']:
+        if os_t not in ['windows', 'linux']:
             return jsonify({'success': False, 'error': 'Invalid OS type'}), 400
         
-        default_credentials[os_type]['username'] = username
-        default_credentials[os_type]['password'] = password
+        default_credentials[os_t]['username'] = user
+        default_credentials[os_t]['password_encrypted'] = encrypt_password(pwd)
         
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/servers/<int:server_id>/credentials', methods=['PUT'])
-def api_update_server_credentials(server_id):
-    """Update credentials for a specific server"""
+@app.route('/api/servers/<int:srv_id>/credentials', methods=['PUT'])
+def api_update_server_credentials(srv_id):
     try:
-        data = request.get_json()
-        username = data.get('username', '')
-        password = data.get('password', '')
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
         
-        server = get_server(server_id)
-        if not server:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
+        
+        user = data.get('username', '').strip()
+        pwd = data.get('password', '')
+        
+        if not user:
+            return jsonify({'success': False, 'error': 'Username is required'}), 400
+        
+        if pwd is None:
+            pwd = ''
+        
+        srv = get_server(srv_id)
+        if not srv:
             return jsonify({'success': False, 'error': 'Server not found'}), 404
         
-        # Update server credentials in database
         from database import update_server_credentials
-        result = update_server_credentials(server_id, username, password)
+        ok = update_server_credentials(srv_id, user, pwd)
         
-        if result:
+        if ok:
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Update failed'}), 500
     except Exception as e:
+        logging.error(f"Error updating credentials: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ==================== SERVER MANAGEMENT API ====================
+# Server API
 
 @app.route('/api/servers', methods=['GET'])
 def api_get_servers():
-    """Get all servers, optionally filtered by project"""
     try:
         project_id = request.args.get('project_id')
         
@@ -209,18 +188,21 @@ def api_get_servers():
         else:
             servers = get_all_servers()
         
+        # Remove passwords from response
+        servers = sanitize_server_data(servers)
+        
         return jsonify({'success': True, 'servers': servers})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/servers/<int:server_id>', methods=['GET'])
-def api_get_server(server_id):
-    """Get a single server by ID"""
+@app.route('/api/servers/<int:srv_id>', methods=['GET'])
+def api_get_server(srv_id):
     try:
-        server = get_server(server_id)
-        if server:
-            return jsonify({'success': True, 'server': server})
+        srv = get_server(srv_id)
+        if srv:
+            srv = sanitize_server_data(srv)
+            return jsonify({'success': True, 'server': srv})
         return jsonify({'success': False, 'error': 'Server not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -228,62 +210,49 @@ def api_get_server(server_id):
 
 @app.route('/api/servers', methods=['POST'])
 def api_add_server():
-    """Add a new server"""
     try:
         data = request.get_json()
         
-        # IP is always required
         if not data.get('ip'):
             return jsonify({'success': False, 'error': 'Missing required field: ip'}), 400
         
-        ip = data['ip'].strip()
+        ip_addr = data['ip'].strip()
+        user = data.get('username', '').strip()
+        pwd = data.get('password', '')
         
-        # Get credentials - use defaults if not provided
-        username = data.get('username', '').strip()
-        password = data.get('password', '')
+        # Use defaults if needed
+        if data.get('use_default', False) or (not user and not pwd):
+            user = user or 'pending'
+            pwd = pwd or 'pending'
         
-        # If using default credentials, get them from stored credentials
-        if data.get('use_default', False) or (not username and not password):
-            # Will be filled during scan from default credentials
-            username = username or 'pending'
-            password = password or 'pending'
+        # OS detection
+        os_t = data.get('os_type', '').strip()
+        auto_detected = False
         
-        # Auto-detect OS type if not provided
-        os_type = data.get('os_type', '').strip()
-        detected = False
+        if not os_t or data.get('auto_detect', False):
+            os_t = detect_os_type(ip_addr)
+            auto_detected = True
         
-        if not os_type or data.get('auto_detect', False):
-            os_type = detect_os_type(ip)
-            detected = True
+        proj_id = data.get('project_id')
         
-        # Get optional project_id
-        project_id = data.get('project_id')
+        res = add_server(ip_addr, user, pwd, os_t, proj_id)
         
-        result = add_server(
-            ip,
-            username,
-            password,
-            os_type,
-            project_id
-        )
-        
-        if result['success']:
-            response = {'success': True, 'id': result['id']}
-            if detected:
-                response['detected'] = True
-                response['os_type'] = os_type
-            return jsonify(response)
-        return jsonify({'success': False, 'error': result['error']}), 400
+        if res['success']:
+            resp = {'success': True, 'id': res['id']}
+            if auto_detected:
+                resp['detected'] = True
+                resp['os_type'] = os_t
+            return jsonify(resp)
+        return jsonify({'success': False, 'error': res['error']}), 400
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/servers/<int:server_id>', methods=['DELETE'])
-def api_delete_server(server_id):
-    """Delete a server"""
+@app.route('/api/servers/<int:srv_id>', methods=['DELETE'])
+def api_delete_server(srv_id):
     try:
-        if delete_server(server_id):
+        if delete_server(srv_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Server not found'}), 404
     except Exception as e:
@@ -292,91 +261,77 @@ def api_delete_server(server_id):
 
 @app.route('/api/servers/clear', methods=['DELETE'])
 def api_clear_servers():
-    """Delete servers - optionally filtered by project"""
     try:
-        project_id = request.args.get('project_id')
+        proj_id = request.args.get('project_id')
         
-        if project_id is None:
-            # No filter - delete all
-            count = clear_all_servers()
-            message = 'Tüm sunucular silindi'
-        elif project_id == 'unassigned':
-            # Delete unassigned servers
-            count = clear_unassigned_servers()
-            message = 'Atanmamış sunucular silindi'
+        if proj_id is None:
+            cnt = clear_all_servers()
+            msg = 'All servers deleted'
+        elif proj_id == 'unassigned':
+            cnt = clear_unassigned_servers()
+            msg = 'Unassigned servers deleted'
         else:
-            # Delete servers in specific project
-            count = clear_servers_by_project(int(project_id))
-            message = 'Projedeki sunucular silindi'
+            cnt = clear_servers_by_project(int(proj_id))
+            msg = 'Project servers deleted'
         
-        return jsonify({'success': True, 'deleted': count, 'message': message})
+        return jsonify({'success': True, 'deleted': cnt, 'message': msg})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/servers/bulk', methods=['POST'])
 def api_bulk_import():
-    """Bulk import servers from TXT, CSV or JSON"""
     try:
-        project_id = None
+        proj_id = None
         
         if 'file' not in request.files:
-            # Try JSON data
+            # Try JSON
             data = request.get_json()
             if data and 'servers' in data:
-                project_id = data.get('project_id')
-                result = bulk_add_servers(data['servers'], project_id)
-                return jsonify({'success': True, 'result': result})
+                proj_id = data.get('project_id')
+                res = bulk_add_servers(data['servers'], proj_id)
+                return jsonify({'success': True, 'result': res})
             elif data and 'content' in data:
-                # Handle text content (from textarea)
-                project_id = data.get('project_id')
-                content = data['content']
-                servers = parse_server_list_content(content)
-                result = bulk_add_servers(servers, project_id)
-                return jsonify({'success': True, 'result': result})
+                proj_id = data.get('project_id')
+                srv_list = parse_server_list_content(data['content'])
+                res = bulk_add_servers(srv_list, proj_id)
+                return jsonify({'success': True, 'result': res})
             return jsonify({'success': False, 'error': 'No file or data provided'}), 400
         
-        file = request.files['file']
-        if file.filename == '':
+        f = request.files['file']
+        if f.filename == '':
             return jsonify({'success': False, 'error': 'No file selected'}), 400
         
-        # Get project_id from form data
-        project_id = request.form.get('project_id')
-        if project_id:
-            project_id = int(project_id)
+        proj_id = request.form.get('project_id')
+        if proj_id:
+            proj_id = int(proj_id)
         
-        # Read file content
-        content = file.stream.read().decode('utf-8')
-        filename = file.filename.lower()
+        content = f.stream.read().decode('utf-8')
+        fname = f.filename.lower()
         
-        # Determine file type and parse accordingly
-        if filename.endswith('.csv'):
-            # CSV format with headers
+        if fname.endswith('.csv'):
+            # CSV
             stream = io.StringIO(content)
             reader = csv.DictReader(stream)
-            
-            servers = []
-            for row in reader:
-                servers.append({
-                    'ip': row.get('ip', '').strip(),
-                    'username': row.get('username', '').strip(),
-                    'password': row.get('password', '').strip(),
-                    'os_type': row.get('os_type', 'Windows').strip()
-                })
+            srv_list = [{
+                'ip': row.get('ip', '').strip(),
+                'username': row.get('username', '').strip(),
+                'password': row.get('password', '').strip(),
+                'os_type': row.get('os_type', 'Windows').strip()
+            } for row in reader]
         else:
-            # TXT format - one IP per line with optional OS hint
-            servers = parse_server_list_content(content)
+            # TXT
+            srv_list = parse_server_list_content(content)
         
-        result = bulk_add_servers(servers, project_id)
-        return jsonify({'success': True, 'result': result})
-        
+        res = bulk_add_servers(srv_list, proj_id)
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def parse_server_list_content(content, auto_detect=True):
-    """Parse server list from text content"""
-    servers = []
+    # Parse IP list from text
+    srv_list = []
     lines = content.strip().split('\n')
     
     for line in lines:
@@ -385,248 +340,240 @@ def parse_server_list_content(content, auto_detect=True):
             continue
         
         parts = line.split()
-        ip = parts[0].strip()
-        os_type = None
+        ip_addr = parts[0].strip()
+        os_t = None
         
         if len(parts) > 1:
-            os_hint = parts[1].upper()
-            if os_hint in ['L', 'LINUX']:
-                os_type = 'Linux'
-            elif os_hint in ['W', 'WINDOWS']:
-                os_type = 'Windows'
+            hint = parts[1].upper()
+            if hint in ['L', 'LINUX']:
+                os_t = 'Linux'
+            elif hint in ['W', 'WINDOWS']:
+                os_t = 'Windows'
         
-        # Auto-detect if OS type not specified
-        if os_type is None:
+        if os_t is None:
             if auto_detect:
-                os_type = detect_os_type(ip)
+                os_t = detect_os_type(ip_addr)
             else:
-                os_type = 'Windows'  # Default fallback
+                os_t = 'Windows'
         
-        servers.append({
-            'ip': ip,
-            'username': '',  # Will use default credentials
-            'password': '',
-            'os_type': os_type
-        })
+        srv_list.append({'ip': ip_addr, 'username': '', 'password': '', 'os_type': os_t})
     
-    return servers
+    return srv_list
 
 
-# ==================== PROJECT MANAGEMENT API ====================
+# Project API
 
 @app.route('/api/projects', methods=['GET'])
 def api_get_projects():
-    """Get all projects"""
     try:
-        projects = get_all_projects()
-        return jsonify({'success': True, 'projects': projects})
+        projs = get_all_projects()
+        return jsonify({'success': True, 'projects': projs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/projects/with-stats', methods=['GET'])
 def api_get_projects_with_stats():
-    """Get all projects with their statistics"""
     try:
         data = get_all_projects_with_stats()
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/projects', methods=['POST'])
 def api_create_project():
-    """Create a new project"""
     try:
         data = request.get_json()
         name = data.get('name', '').strip()
-        
         if not name:
             return jsonify({'success': False, 'error': 'Project name is required'}), 400
-        
-        result = create_project(name)
-        
-        if result['success']:
-            return jsonify({'success': True, 'id': result['id']})
-        return jsonify({'success': False, 'error': result['error']}), 400
-        
+        res = create_project(name)
+        if res['success']:
+            return jsonify({'success': True, 'id': res['id']})
+        return jsonify({'success': False, 'error': res['error']}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-@app.route('/api/projects/<int:project_id>', methods=['GET'])
-def api_get_project(project_id):
-    """Get a single project by ID"""
+@app.route('/api/projects/<int:proj_id>', methods=['GET'])
+def api_get_project(proj_id):
     try:
-        project = get_project(project_id)
-        if project:
-            return jsonify({'success': True, 'project': project})
+        proj = get_project(proj_id)
+        if proj:
+            return jsonify({'success': True, 'project': proj})
         return jsonify({'success': False, 'error': 'Project not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/projects/<int:project_id>', methods=['PUT'])
-def api_rename_project(project_id):
-    """Rename a project"""
+@app.route('/api/projects/<int:proj_id>', methods=['PUT'])
+def api_rename_project(proj_id):
     try:
-        data = request.get_json()
-        name = data.get('name', '').strip()
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
         
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
+        
+        name = data.get('name', '').strip()
         if not name:
             return jsonify({'success': False, 'error': 'Project name is required'}), 400
         
-        result = rename_project(project_id, name)
-        
-        if result['success']:
+        res = rename_project(proj_id, name)
+        if res['success']:
             return jsonify({'success': True})
-        return jsonify({'success': False, 'error': result['error']}), 400
-        
+        return jsonify({'success': False, 'error': res['error']}), 400
     except Exception as e:
+        logging.error(f"Error renaming project: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-@app.route('/api/projects/<int:project_id>', methods=['DELETE'])
-def api_delete_project(project_id):
-    """Delete a project"""
+@app.route('/api/projects/<int:proj_id>', methods=['DELETE'])
+def api_delete_project(proj_id):
     try:
-        if delete_project(project_id):
+        if delete_project(proj_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Project not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-@app.route('/api/projects/<int:project_id>/servers', methods=['GET'])
-def api_get_project_servers(project_id):
-    """Get all servers for a project"""
+@app.route('/api/projects/<int:proj_id>/servers', methods=['GET'])
+def api_get_project_servers(proj_id):
     try:
-        servers = get_servers_by_project(project_id)
-        stats = get_server_stats(project_id)
-        return jsonify({'success': True, 'servers': servers, 'stats': stats})
+        srv_list = get_servers_by_project(proj_id)
+        stats = get_server_stats(proj_id)
+        srv_list = sanitize_server_data(srv_list)
+        return jsonify({'success': True, 'servers': srv_list, 'stats': stats})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/projects/unassigned/servers', methods=['GET'])
 def api_get_unassigned_servers():
-    """Get all servers without a project"""
     try:
-        servers = get_unassigned_servers()
+        srv_list = get_unassigned_servers()
         stats = get_server_stats_unassigned()
-        return jsonify({'success': True, 'servers': servers, 'stats': stats})
+        srv_list = sanitize_server_data(srv_list)
+        return jsonify({'success': True, 'servers': srv_list, 'stats': stats})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/servers/assign', methods=['POST'])
 def api_assign_servers():
-    """Assign servers to a project"""
     try:
         data = request.get_json()
-        server_ids = data.get('server_ids', [])
-        project_id = data.get('project_id')  # None means unassign
-        
-        if not server_ids:
+        srv_ids = data.get('server_ids', [])
+        proj_id = data.get('project_id')
+        if not srv_ids:
             return jsonify({'success': False, 'error': 'No servers specified'}), 400
-        
-        result = assign_servers_to_project(server_ids, project_id)
-        return jsonify({'success': True, 'result': result})
-        
+        res = assign_servers_to_project(srv_ids, proj_id)
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ==================== SCANNING API ====================
+# Scanning API
 
-@app.route('/api/scan/<int:server_id>', methods=['POST'])
-def get_server_with_credentials(server):
-    """Get server with credentials - use defaults if empty"""
-    server_copy = dict(server)
-    os_type = server_copy.get('os_type', 'Windows').lower()
+def get_server_with_credentials(srv):
+    # Fill in default creds if server doesn't have them
+    srv_copy = dict(srv)
+    os_t = srv_copy.get('os_type', 'Windows').lower()
     
-    # Use default credentials if server has no credentials
-    if not server_copy.get('username') or not server_copy.get('password'):
-        cred_key = 'windows' if os_type == 'windows' else 'linux'
-        
-        if default_credentials[cred_key]['username'] and default_credentials[cred_key]['password']:
-            server_copy['username'] = default_credentials[cred_key]['username']
-            server_copy['password'] = default_credentials[cred_key]['password']
+    if not srv_copy.get('username') or not srv_copy.get('password'):
+        key = 'windows' if os_t == 'windows' else 'linux'
+        enc_pwd = default_credentials[key].get('password_encrypted', '')
+        if default_credentials[key]['username'] and enc_pwd:
+            srv_copy['username'] = default_credentials[key]['username']
+            srv_copy['password'] = decrypt_password(enc_pwd)
         else:
-            # No credentials available
             return None
     
-    return server_copy
+    return srv_copy
 
-
-def api_scan_server(server_id):
-    """Scan a single server"""
+@app.route('/api/scan/<int:srv_id>', methods=['POST'])
+def api_scan_server(srv_id):
     try:
-        server = get_server(server_id)
-        if not server:
+        srv = get_server(srv_id)
+        if not srv:
             return jsonify({'success': False, 'error': 'Server not found'}), 404
         
-        # Get server with credentials
-        server_with_creds = get_server_with_credentials(server)
-        if not server_with_creds:
-            return jsonify({
-                'success': False, 
-                'error': 'Kimlik bilgisi bulunamadı. Lütfen sunucu veya varsayılan kimlik bilgilerini girin.'
-            }), 400
+        srv_creds = get_server_with_credentials(srv)
+        if not srv_creds:
+            return jsonify({'success': False, 'error': 'No credentials found. Please set server or default credentials.'}), 400
         
-        # Perform scan
-        result = scan_server(server_with_creds)
+        res = scan_server(srv_creds)
         
-        # Update database
-        if result.get('status') == 'Online':
-            update_server_scan_data(server_id, result)
+        if res.get('status') == 'Online':
+            update_server_scan_data(srv_id, res)
         else:
-            update_server_status(server_id, 'Offline')
+            update_server_status(srv_id, 'Offline')
         
-        return jsonify({'success': True, 'result': result})
-        
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/scan-all', methods=['POST'])
 def api_scan_all():
-    """Scan all servers in parallel"""
     try:
-        servers = get_all_servers()
+        # Get project filter from query or body
+        proj_id = request.args.get('project_id')
+        if not proj_id and request.is_json:
+            data = request.get_json()
+            proj_id = data.get('project_id') if data else None
+        
+        if proj_id == 'unassigned':
+            proj_id = 'unassigned'
+        elif proj_id:
+            try:
+                proj_id = int(proj_id)
+            except (ValueError, TypeError):
+                proj_id = None
+        
+        # Get servers to scan
+        if proj_id is not None:
+            if proj_id == 'unassigned':
+                servers = get_unassigned_servers()
+            else:
+                servers = get_servers_by_project(int(proj_id))
+        else:
+            servers = get_all_servers()
+        
         if not servers:
             return jsonify({'success': True, 'results': [], 'message': 'No servers to scan'})
         
-        # Prepare servers with credentials
-        servers_to_scan = []
+        # Get servers ready for scanning
+        to_scan = []
         skipped = 0
         
-        for server in servers:
-            server_with_creds = get_server_with_credentials(server)
-            if server_with_creds:
-                servers_to_scan.append(server_with_creds)
+        for srv in servers:
+            srv_with_creds = get_server_with_credentials(srv)
+            if srv_with_creds:
+                to_scan.append(srv_with_creds)
             else:
                 skipped += 1
         
-        if not servers_to_scan:
-            return jsonify({
-                'success': True, 
-                'results': [], 
-                'message': 'Taranacak sunucu yok (kimlik bilgisi eksik)',
-                'skipped': skipped
-            })
+        if not to_scan:
+            return jsonify({'success': True, 'results': [], 'message': 'No servers to scan (missing credentials)', 'skipped': skipped})
         
-        # Perform parallel scan
-        results = scan_all_servers(servers_to_scan)
+        # Adjust workers based on count
+        cnt = len(to_scan)
+        if cnt <= 10:
+            workers = 10
+        elif cnt <= 50:
+            workers = 20
+        elif cnt <= 100:
+            workers = 30
+        else:
+            workers = 50
         
-        # Update database for each result
-        for result in results:
-            server_id = result.get('id')
-            if server_id:
-                if result.get('status') == 'Online':
-                    update_server_scan_data(server_id, result)
+        results = scan_all_servers(to_scan, max_workers=workers)
+        
+        # Save results to DB
+        for res in results:
+            srv_id = res.get('id')
+            if srv_id:
+                if res.get('status') == 'Online':
+                    update_server_scan_data(srv_id, res)
                 else:
-                    update_server_status(server_id, 'Offline')
+                    update_server_status(srv_id, 'Offline')
         
         return jsonify({
             'success': True,
@@ -641,89 +588,56 @@ def api_scan_all():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ==================== EXPORT API ====================
+# Export API
 
 @app.route('/api/export/excel', methods=['GET'])
 def api_export_excel():
-    """Generate and download Excel report (all servers)"""
     try:
-        servers = get_all_servers()
+        srv_list = get_all_servers()
         stats = get_server_stats()
-        
-        filepath = generate_excel_report(servers, stats)
-        
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(filepath),
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        
+        filepath = generate_excel_report(srv_list, stats)
+        return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/export/excel/project/<int:project_id>', methods=['GET'])
-def api_export_project_excel(project_id):
-    """Generate and download Excel report for a single project"""
+@app.route('/api/export/excel/project/<int:proj_id>', methods=['GET'])
+def api_export_project_excel(proj_id):
     try:
-        project = get_project(project_id)
-        if not project:
+        proj = get_project(proj_id)
+        if not proj:
             return jsonify({'success': False, 'error': 'Project not found'}), 404
-        
-        servers = get_servers_by_project(project_id)
-        stats = get_server_stats(project_id)
-        
-        filepath = generate_project_excel_report(project['name'], servers, stats)
-        
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(filepath),
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        
+        srv_list = get_servers_by_project(proj_id)
+        stats = get_server_stats(proj_id)
+        filepath = generate_project_excel_report(proj['name'], srv_list, stats)
+        return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/export/excel/all-projects', methods=['GET'])
 def api_export_all_projects_excel():
-    """Generate and download Excel report with all projects (each project as separate sheet)"""
     try:
-        projects = get_all_projects()
-        
-        # Build projects data with servers and stats
-        projects_data = []
-        for project in projects:
-            servers = get_servers_by_project(project['id'])
-            stats = get_server_stats(project['id'])
-            projects_data.append({
-                'name': project['name'],
-                'servers': servers,
-                'stats': stats
-            })
-        
-        # Also include unassigned servers
-        unassigned_servers = get_unassigned_servers()
+        projs = get_all_projects()
+        proj_data = []
+        for p in projs:
+            srv_list = get_servers_by_project(p['id'])
+            stats = get_server_stats(p['id'])
+            proj_data.append({'name': p['name'], 'servers': srv_list, 'stats': stats})
+        unassigned_srv = get_unassigned_servers()
         unassigned_stats = get_server_stats_unassigned()
-        
-        filepath = generate_all_projects_excel_report(projects_data, unassigned_servers, unassigned_stats)
-        
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(filepath),
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        
+        filepath = generate_all_projects_excel_report(proj_data, unassigned_srv, unassigned_stats)
+        return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ==================== STATS API ====================
+# Stats API
 
-# ==================== REPORT COMPARISON API ====================
+# Report comparison
 
 def read_scan_hostnames(file):
     """Read hostnames from scan report Excel file"""
@@ -1003,35 +917,41 @@ def api_download_compare_report():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ==================== STATS API ====================
-
 @app.route('/api/stats', methods=['GET'])
 def api_get_stats():
-    """Get server statistics"""
     try:
         stats = get_server_stats()
         return jsonify({'success': True, 'stats': stats})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-# ==================== MAIN ====================
+# Main
 
 def open_browser():
-    """Open browser after a short delay"""
-    webbrowser.open('http://localhost:5000')
+    webbrowser.open('https://localhost:5000')
 
 
 if __name__ == '__main__':
+    protocol = 'https' if USE_HTTPS else 'http'
+    
     print("\n" + "="*50)
     print("  ServerScout - Server Inventory Management")
     print("="*50)
-    print("\n  Starting server at http://localhost:5000")
+    print(f"\n  Starting server at {protocol}://{SERVER_HOST}:{SERVER_PORT}")
+    if USE_HTTPS:
+        print("  [HTTPS] Secure connection enabled")
     print("  Press Ctrl+C to stop\n")
     
-    # Only open browser if NOT running under Electron
     if not os.environ.get('ELECTRON_RUN'):
         threading.Timer(1.5, open_browser).start()
     
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    try:
+        if USE_HTTPS:
+            app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False, ssl_context='adhoc')
+        else:
+            app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False)
+    except Exception as e:
+        logging.error(f"Failed to start server: {e}")
+        print(f"\n[ERROR] Failed to start server: {e}")
+        sys.exit(1)
 

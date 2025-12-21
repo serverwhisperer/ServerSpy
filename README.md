@@ -1,6 +1,8 @@
 # 🔍 ServerScout
 
-**Server Inventory Management Tool** - A modern Python web application for automated server scanning and Excel export.
+**Server Inventory Management Tool** - A modern desktop application for automated server scanning and Excel export.
+
+**Desktop Application** - Runs as Electron desktop app, no browser needed!
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0-green.svg)
@@ -14,7 +16,9 @@
 - **⚡ Parallel Scanning** - Scan multiple servers simultaneously for faster results
 - **📊 Excel Export** - Generate professional Excel reports with 3 sheets (Summary, Inventory, Warnings)
 - **🎨 Modern Web UI** - Clean, responsive interface with search, filter, and sort capabilities
-- **💾 SQLite Database** - Lightweight, portable data storage
+- **💾 Temporary Data Storage** - Data is cleared on each startup (session-based)
+- **🔒 HTTPS by Default** - All connections encrypted with self-signed certificate
+- **🖥️ Desktop App** - Electron-based, no browser required
 
 ## 📋 Data Collected
 
@@ -52,15 +56,30 @@ ServerScout collects the same data as legacy VBScript inventory systems:
    pip install -r requirements.txt
    ```
 
-3. **Run the application:**
+3. **Run as Desktop App (Recommended):**
    ```bash
-   python app.py
+   cd electron
+   npm install
+   npm start
    ```
    
    Or simply double-click `start.bat` (Windows)
+   
+   **Note:** 
+   - Runs as desktop application (Electron)
+   - HTTPS enabled by default
+   - Self-signed certificate warning is automatically handled
+   - No browser needed!
 
-4. **Open in browser:**
-   Navigate to `http://localhost:5000`
+4. **Run as Web App (Development):**
+   ```bash
+   cd backend
+   python app.py
+   ```
+   
+   Then open `https://localhost:5000` in browser
+   
+   **Note:** Browser will show security warning for self-signed certificate - click "Advanced" > "Continue" (this is normal for localhost)
 
 ## 📁 Project Structure
 
@@ -83,6 +102,16 @@ ServerScout/
 ├── start.bat               # Quick start script
 └── README.md               # This file
 ```
+
+## 🔒 Security Features
+
+- **HTTPS by Default:** All connections encrypted (self-signed certificate for localhost)
+- **Password Encryption:** All passwords encrypted with AES-128 (Fernet)
+- **Temporary Data:** Database cleared on each startup (session-based)
+- **No Persistent Storage:** Data is only kept during application session
+- **Windows DPAPI:** Encryption keys protected with Windows Data Protection API
+
+See [SECURITY.md](SECURITY.md) for detailed security documentation.
 
 ## 🔧 Server Configuration
 
@@ -136,22 +165,29 @@ ip,username,password,os_type
 192.168.1.20,root,secretpass,Linux
 ```
 
-## 🖥️ Electron Desktop App
+## 🖥️ Electron Desktop App (Primary Method)
 
-For a native desktop experience, you can run ServerScout as an Electron app:
+ServerScout is designed to run as a **desktop application** using Electron. This is the recommended way to use the application.
 
 ### Prerequisites
 - Node.js 18+ (download from https://nodejs.org)
 - Python dependencies already installed
 
-### Run as Electron App
+### Run as Desktop App
 ```bash
 cd electron
 npm install
 npm start
 ```
 
-Or simply double-click `electron/start-electron.bat`
+Or simply double-click `start.bat` (Windows)
+
+**Features:**
+- ✅ Native desktop experience
+- ✅ HTTPS enabled by default
+- ✅ Self-signed certificate automatically accepted
+- ✅ No browser needed
+- ✅ Automatic backend server management
 
 ### Build Electron Installer
 ```bash
@@ -160,6 +196,8 @@ npm run build
 ```
 
 Output will be in `electron/dist/`
+- **Portable:** `ServerScout-Portable-*.exe` (no installation needed)
+- **Installer:** `ServerScout-Setup-*.exe` (with installer)
 
 ## 🏗️ Building PyInstaller Executable
 

@@ -44,7 +44,7 @@
                 <input type="text" id="winUsername" placeholder="DOMAIN\username">
                 <input type="password" id="winPassword" placeholder="Password">
                 <button class="btn btn-sm btn-primary" onclick="saveCredentials('windows')">💾</button>
-                <button class="btn btn-sm btn-danger" onclick="clearCredentials('windows')" title="Temizle">✕</button>
+                <button class="btn btn-sm btn-danger" onclick="clearCredentials('windows')" title="Clear">✕</button>
                 <span class="cred-status" id="winCredStatus"></span>
             </div>
             <div class="cred-section">
@@ -52,7 +52,7 @@
                 <input type="text" id="linuxUsername" placeholder="root">
                 <input type="password" id="linuxPassword" placeholder="Password">
                 <button class="btn btn-sm btn-primary" onclick="saveCredentials('linux')">💾</button>
-                <button class="btn btn-sm btn-danger" onclick="clearCredentials('linux')" title="Temizle">✕</button>
+                <button class="btn btn-sm btn-danger" onclick="clearCredentials('linux')" title="Clear">✕</button>
                 <span class="cred-status" id="linuxCredStatus"></span>
             </div>
         </div>
@@ -60,12 +60,12 @@
         <!-- Project Selector Bar -->
         <div class="project-bar">
             <div class="project-selector">
-                <span class="project-label">📂 Proje:</span>
+                <span class="project-label">📂 Project:</span>
                 <select id="projectSelect" onchange="onProjectChange()">
-                    <option value="">Tüm Projeler</option>
+                    <option value="">All Projects</option>
                 </select>
-                <button class="btn btn-sm btn-primary" onclick="showNewProjectModal()" title="Yeni Proje">➕</button>
-                <button class="btn btn-sm btn-secondary" onclick="showManageProjectsModal()" title="Projeleri Yönet">⚙️</button>
+                <button class="btn btn-sm btn-primary" onclick="showNewProjectModal()" title="New Project">➕</button>
+                <button class="btn btn-sm btn-secondary" onclick="showManageProjectsModal()" title="Manage Projects">⚙️</button>
             </div>
             <div class="project-stats" id="projectStats">
                 <span id="projectServerCount"></span>
@@ -79,7 +79,7 @@
                     <span class="btn-icon">📁</span> Import TXT
                 </button>
                 <button class="btn btn-secondary" onclick="showAddServerModal()">
-                    <span class="btn-icon">➕</span> Tek Sunucu Ekle
+                    <span class="btn-icon">➕</span> Add Single Server
                 </button>
                 <button class="btn btn-success" onclick="scanAllServers()" id="btnScanAll">
                     <span class="btn-icon">🔄</span> Scan All
@@ -88,7 +88,7 @@
                     <span class="btn-icon">📊</span> Export Excel
                 </button>
                 <button class="btn btn-danger" onclick="clearAllServers()">
-                    <span class="btn-icon">🗑️</span> Temizle
+                    <span class="btn-icon">🗑️</span> Clear
                 </button>
             </div>
             <div class="toolbar-filters">
@@ -159,8 +159,8 @@
 server01.domain.com
 192.168.1.20 W
 linuxserver.local L</code>
-                    <p class="example">W/L opsiyonel - belirtilmezse <strong>otomatik tespit</strong> edilir</p>
-                    <p class="example"># ile başlayan satırlar yorum olarak atlanır</p>
+                    <p class="example">W/L optional - if not specified, OS will be <strong>auto-detected</strong></p>
+                    <p class="example">Lines starting with # are treated as comments and skipped</p>
                 </div>
                 <form id="importForm" onsubmit="importServers(event)">
                     <div class="form-group">
@@ -244,7 +244,7 @@ server01.domain.com W
     <div class="modal" id="setCredsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>🔑 Sunucu Kimlik Bilgileri</h2>
+                <h2>🔑 Server Credentials</h2>
                 <button class="modal-close" onclick="closeModal('setCredsModal')">&times;</button>
             </div>
             <div class="modal-body">
@@ -252,16 +252,16 @@ server01.domain.com W
                     <input type="hidden" id="credServerId">
                     <p id="credServerInfo" class="server-info-text"></p>
                     <div class="form-group">
-                        <label for="credUsername">Kullanıcı Adı</label>
+                        <label for="credUsername">Username</label>
                         <input type="text" id="credUsername" required>
                     </div>
                     <div class="form-group">
-                        <label for="credPassword">Şifre</label>
+                        <label for="credPassword">Password</label>
                         <input type="password" id="credPassword" required>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('setCredsModal')">İptal</button>
-                        <button type="submit" class="btn btn-primary">Kaydet</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('setCredsModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
                     </div>
                 </form>
             </div>
@@ -272,18 +272,18 @@ server01.domain.com W
     <div class="modal" id="newProjectModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>📂 Yeni Proje Oluştur</h2>
+                <h2>📂 Create New Project</h2>
                 <button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="newProjectForm" onsubmit="createProject(event)">
                     <div class="form-group">
-                        <label for="projectName">Proje Adı *</label>
-                        <input type="text" id="projectName" placeholder="Örn: Datacenter-A, Web Sunucuları..." required>
+                        <label for="projectName">Project Name *</label>
+                        <input type="text" id="projectName" placeholder="e.g: Datacenter-A, Web Servers..." required>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('newProjectModal')">İptal</button>
-                        <button type="submit" class="btn btn-primary">Oluştur</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('newProjectModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create</button>
                     </div>
                 </form>
             </div>
@@ -294,7 +294,7 @@ server01.domain.com W
     <div class="modal" id="manageProjectsModal">
         <div class="modal-content modal-large">
             <div class="modal-header">
-                <h2>⚙️ Proje Yönetimi</h2>
+                <h2>⚙️ Project Management</h2>
                 <button class="modal-close" onclick="closeModal('manageProjectsModal')">&times;</button>
             </div>
             <div class="modal-body">
@@ -317,15 +317,15 @@ server01.domain.com W
                     <div class="export-option" onclick="exportCurrentProject()">
                         <span class="export-icon">📄</span>
                         <div class="export-info">
-                            <h4>Seçili Projeyi Export Et</h4>
+                            <h4>Export Selected Project</h4>
                             <p id="exportCurrentProjectName">Tüm sunucular</p>
                         </div>
                     </div>
                     <div class="export-option" onclick="exportAllProjects()">
                         <span class="export-icon">📚</span>
                         <div class="export-info">
-                            <h4>Tüm Projeleri Export Et</h4>
-                            <p>Her proje ayrı sheet, karşılaştırmalı özet</p>
+                            <h4>Export All Projects</h4>
+                            <p>Each project as separate sheet, comparative summary</p>
                         </div>
                     </div>
                 </div>
@@ -337,7 +337,7 @@ server01.domain.com W
     <div class="modal" id="assignProjectModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>📂 Projeye Ata</h2>
+                <h2>📂 Assign to Project</h2>
                 <button class="modal-close" onclick="closeModal('assignProjectModal')">&times;</button>
             </div>
             <div class="modal-body">
@@ -345,14 +345,14 @@ server01.domain.com W
                     <input type="hidden" id="assignServerId">
                     <p id="assignServerInfo" class="server-info-text"></p>
                     <div class="form-group">
-                        <label for="assignProjectSelect">Proje Seçin</label>
+                        <label for="assignProjectSelect">Select Project</label>
                         <select id="assignProjectSelect">
-                            <option value="">(Projesiz)</option>
+                            <option value="">(No Project)</option>
                         </select>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('assignProjectModal')">İptal</button>
-                        <button type="submit" class="btn btn-primary">Ata</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('assignProjectModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Assign</button>
                     </div>
                 </form>
             </div>
@@ -509,13 +509,13 @@ server01.domain.com W
     <div class="modal" id="confirmModal">
         <div class="modal-content modal-small">
             <div class="modal-header confirm-header">
-                <h2 id="confirmTitle">⚠️ Onay</h2>
+                <h2 id="confirmTitle">⚠️ Confirm</h2>
             </div>
             <div class="modal-body">
                 <p id="confirmMessage" class="confirm-message"></p>
                 <div class="confirm-actions">
-                    <button class="btn btn-secondary" onclick="handleConfirm(false)">İptal</button>
-                    <button class="btn btn-danger" id="confirmYesBtn" onclick="handleConfirm(true)">Evet, Sil</button>
+                    <button class="btn btn-secondary" onclick="handleConfirm(false)">Cancel</button>
+                    <button class="btn btn-danger" id="confirmYesBtn" onclick="handleConfirm(true)">Yes, Delete</button>
                 </div>
             </div>
         </div>

@@ -57,13 +57,13 @@ async function loadServers() {
         
         const data = await apiCall(endpoint);
         if (data.success) {
-            servers = data.servers;
+            servers = data.servers || [];
             
             // Add project names to servers
             servers.forEach(server => {
                 if (server.project_id) {
                     const project = projects.find(p => p.id === server.project_id);
-                    server.project_name = project ? project.name : 'Bilinmiyor';
+                    server.project_name = project ? project.name : 'Unknown';
                 } else {
                     server.project_name = '';
                 }
@@ -73,6 +73,8 @@ async function loadServers() {
             renderTable();
             updateEmptyState();
             updateProjectStats();
+        } else {
+            console.error('Failed to load servers:', data.error);
         }
     } catch (error) {
         console.error('Error loading servers:', error);
@@ -131,8 +133,8 @@ function updateProjectDropdowns() {
     
     if (projectSelect) {
         const currentValue = projectSelect.value;
-        projectSelect.innerHTML = '<option value="">Tüm Projeler</option>';
-        projectSelect.innerHTML += '<option value="unassigned">📁 Atanmamış</option>';
+        projectSelect.innerHTML = '<option value="">All Projects</option>';
+        projectSelect.innerHTML += '<option value="unassigned">📁 Unassigned</option>';
         
         projects.forEach(project => {
             const option = document.createElement('option');
@@ -148,7 +150,7 @@ function updateProjectDropdowns() {
     }
     
     if (assignProjectSelect) {
-        assignProjectSelect.innerHTML = '<option value="">(Projesiz)</option>';
+        assignProjectSelect.innerHTML = '<option value="">(No Project)</option>';
         projects.forEach(project => {
             const option = document.createElement('option');
             option.value = project.id;
@@ -160,14 +162,15 @@ function updateProjectDropdowns() {
 
 function onProjectChange() {
     const projectSelect = document.getElementById('projectSelect');
-    const value = projectSelect.value;
+    const value = projectSelect ? projectSelect.value : '';
     
     if (value === '') {
         currentProjectId = null;
     } else if (value === 'unassigned') {
         currentProjectId = 'unassigned';
     } else {
-        currentProjectId = parseInt(value);
+        const parsed = parseInt(value);
+        currentProjectId = isNaN(parsed) ? null : parsed;
     }
     
     loadServers();
@@ -182,13 +185,13 @@ function updateProjectStats() {
     if (!projectStats) return;
     
     if (currentProjectId === null) {
-        projectStats.textContent = `Toplam ${servers.length} sunucu`;
+        projectStats.textContent = `Total: ${servers.length} server${servers.length !== 1 ? 's' : ''}`;
     } else if (currentProjectId === 'unassigned') {
-        projectStats.textContent = `Atanmamış: ${servers.length} sunucu`;
+        projectStats.textContent = `Unassigned: ${servers.length} server${servers.length !== 1 ? 's' : ''}`;
     } else {
         const project = projects.find(p => p.id === currentProjectId);
         if (project) {
-            projectStats.textContent = `${project.name}: ${servers.length} sunucu`;
+            projectStats.textContent = `${project.name}: ${servers.length} server${servers.length !== 1 ? 's' : ''}`;
         }
     }
 }
@@ -204,11 +207,11 @@ async function createProject(event) {
     const name = nameInput.value.trim();
     
     if (!name) {
-        showToast('Proje adı giriniz', 'warning');
+        showToast('Please enter project name', 'warning');
         return;
     }
     
-    showLoading('Proje oluşturuluyor...');
+    showLoading('Creating project...');
     
     try {
         const data = await apiCall('/api/projects', {
@@ -219,22 +222,24 @@ async function createProject(event) {
         hideLoading();
         
         if (data.success) {
-            showToast('Proje oluşturuldu!', 'success');
+            showToast('Project created!', 'success');
             closeModal('newProjectModal');
             await loadProjects();
             
-            // Select the new project
-            const projectSelect = document.getElementById('projectSelect');
-            if (projectSelect) {
-                projectSelect.value = data.id;
-                onProjectChange();
-            }
+            // Select the new project after dropdown is updated
+            setTimeout(() => {
+                const projectSelect = document.getElementById('projectSelect');
+                if (projectSelect && data.id) {
+                    projectSelect.value = data.id;
+                    onProjectChange();
+                }
+            }, 100);
         } else {
-            showToast(data.error || 'Proje oluşturulamadı', 'error');
+            showToast(data.error || 'Failed to create project', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -258,9 +263,9 @@ async function loadProjectsList() {
             container.innerHTML = `
                 <div class="projects-empty">
                     <div class="projects-empty-icon">📂</div>
-                    <p>Henüz proje oluşturulmamış</p>
+                    <p>No projects created yet</p>
                     <button class="btn btn-primary" onclick="closeModal('manageProjectsModal'); showNewProjectModal();">
-                        ➕ İlk Projeyi Oluştur
+                        ➕ Create First Project
                     </button>
                 </div>
             `;
@@ -274,9 +279,9 @@ async function loadProjectsList() {
             html += `
                 <div class="project-item" style="border-left: 3px solid var(--warning);">
                     <div class="project-item-info">
-                        <div class="project-item-name">📁 Atanmamış Sunucular</div>
+                        <div class="project-item-name">📁 Unassigned Servers</div>
                         <div class="project-item-stats">
-                            ${unassigned.total} sunucu | 
+                            ${unassigned.total} server${unassigned.total !== 1 ? 's' : ''} | 
                             🟢 ${unassigned.online} | 
                             🔴 ${unassigned.offline} | 
                             🟡 ${unassigned.not_scanned}
@@ -294,15 +299,15 @@ async function loadProjectsList() {
                     <div class="project-item-info">
                         <div class="project-item-name">📂 ${escapeHtml(project.name)}</div>
                         <div class="project-item-stats">
-                            ${stats.total} sunucu | 
+                            ${stats.total} server${stats.total !== 1 ? 's' : ''} | 
                             🟢 ${stats.online} | 
                             🔴 ${stats.offline} | 
                             🟡 ${stats.not_scanned}
                         </div>
                     </div>
                     <div class="project-item-actions">
-                        <button class="action-btn" onclick="renameProjectPrompt(${project.id}, '${escapeHtml(project.name)}')" title="Yeniden Adlandır">✏️</button>
-                        <button class="action-btn delete" onclick="deleteProjectConfirm(${project.id}, '${escapeHtml(project.name)}')" title="Sil">🗑️</button>
+                        <button class="action-btn" onclick="renameProjectPrompt(${project.id}, '${escapeHtml(project.name)}')" title="Rename">✏️</button>
+                        <button class="action-btn delete" onclick="deleteProjectConfirm(${project.id}, '${escapeHtml(project.name)}')" title="Delete">🗑️</button>
                     </div>
                 </div>
             `;
@@ -315,7 +320,7 @@ async function loadProjectsList() {
 }
 
 function renameProjectPrompt(projectId, currentName) {
-    const newName = prompt('Yeni proje adı:', currentName);
+    const newName = prompt('New project name:', currentName);
     if (newName && newName.trim() && newName.trim() !== currentName) {
         renameProject(projectId, newName.trim());
     }
@@ -329,22 +334,22 @@ async function renameProject(projectId, newName) {
         });
         
         if (data.success) {
-            showToast('Proje yeniden adlandırıldı', 'success');
+            showToast('Project renamed', 'success');
             await loadProjects();
             loadProjectsList();
         } else {
-            showToast(data.error || 'Yeniden adlandırma başarısız', 'error');
+            showToast(data.error || 'Failed to rename project', 'error');
         }
     } catch (error) {
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
 function deleteProjectConfirm(projectId, projectName) {
     showConfirm(
-        '🗑️ Proje Sil',
-        `"${projectName}" projesini silmek istediğinize emin misiniz?\n\nProjedeki sunucular silinmez, sadece "atanmamış" olur.`,
-        'Evet, Sil',
+        '🗑️ Delete Project',
+        `Are you sure you want to delete project "${projectName}"?\n\nServers in this project will not be deleted, they will become "unassigned".`,
+        'Yes, Delete',
         async (confirmed) => {
             if (!confirmed) return;
             
@@ -354,7 +359,7 @@ function deleteProjectConfirm(projectId, projectName) {
                 });
                 
                 if (data.success) {
-                    showToast('Proje silindi', 'success');
+                    showToast('Project deleted', 'success');
                     
                     // If we were viewing this project, switch to all
                     if (currentProjectId === projectId) {
@@ -366,10 +371,10 @@ function deleteProjectConfirm(projectId, projectName) {
                     loadProjectsList();
                     loadServers();
                 } else {
-                    showToast(data.error || 'Silme başarısız', 'error');
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (error) {
-                showToast('Hata oluştu', 'error');
+                showToast('An error occurred', 'error');
             }
         }
     );
@@ -380,7 +385,7 @@ function showAssignProjectModal(serverId) {
     if (!server) return;
     
     document.getElementById('assignServerId').value = serverId;
-    document.getElementById('assignServerInfo').textContent = `Sunucu: ${server.ip} (${server.hostname || 'hostname yok'})`;
+    document.getElementById('assignServerInfo').textContent = `Server: ${server.ip} (${server.hostname || 'no hostname'})`;
     
     // Update dropdown
     updateProjectDropdowns();
@@ -402,7 +407,7 @@ async function assignSelectedToProject(event) {
     const serverId = parseInt(document.getElementById('assignServerId').value);
     const projectId = document.getElementById('assignProjectSelect').value;
     
-    showLoading('Atanıyor...');
+    showLoading('Assigning...');
     
     try {
         const data = await apiCall('/api/servers/assign', {
@@ -416,15 +421,15 @@ async function assignSelectedToProject(event) {
         hideLoading();
         
         if (data.success) {
-            showToast('Sunucu projeye atandı', 'success');
+            showToast('Server assigned to project', 'success');
             closeModal('assignProjectModal');
             await loadServers();
         } else {
-            showToast(data.error || 'Atama başarısız', 'error');
+            showToast(data.error || 'Failed to assign', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -474,7 +479,7 @@ async function saveCredentials(osType) {
     }
     
     if (!username || !password) {
-        showToast('Kullanıcı adı ve şifre giriniz', 'warning');
+        showToast('Please enter username and password', 'warning');
         return;
     }
     
@@ -493,10 +498,10 @@ async function saveCredentials(osType) {
             }
             showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} bilgileri kaydedildi!`, 'success');
         } else {
-            showToast(data.error || 'Kayıt başarısız', 'error');
+            showToast(data.error || 'Failed to save', 'error');
         }
     } catch (error) {
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -517,10 +522,10 @@ async function clearCredentials(osType) {
                 document.getElementById('linuxPassword').value = '';
                 document.getElementById('linuxCredStatus').textContent = '';
             }
-            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} bilgileri temizlendi`, 'info');
+            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} credentials cleared`, 'info');
         }
     } catch (error) {
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -534,7 +539,7 @@ async function addServer(event) {
     const useCustom = document.getElementById('useCustomCreds').checked;
     
     if (!ip) {
-        showToast('IP adresi giriniz', 'warning');
+        showToast('Please enter IP address', 'warning');
         return;
     }
     
@@ -558,12 +563,12 @@ async function addServer(event) {
         serverData.password = document.getElementById('serverPassword').value;
         
         if (!serverData.username || !serverData.password) {
-            showToast('Özel kimlik bilgisi giriniz', 'warning');
+            showToast('Please enter custom credentials', 'warning');
             return;
         }
     }
     
-    showLoading('Sunucu ekleniyor...');
+    showLoading('Adding server...');
     
     try {
         const data = await apiCall('/api/servers', {
@@ -574,14 +579,14 @@ async function addServer(event) {
         hideLoading();
         
         if (data.success) {
-            let msg = 'Sunucu eklendi!';
+            let msg = 'Server added!';
             if (data.detected) {
-                msg = `Sunucu eklendi! OS: ${data.os_type}`;
+                msg = `Server added! OS: ${data.os_type}`;
             }
             if (serverData.project_id) {
                 const project = projects.find(p => p.id === serverData.project_id);
                 if (project) {
-                    msg += ` (Proje: ${project.name})`;
+                    msg += ` (Project: ${project.name})`;
                 }
             }
             showToast(msg, 'success');
@@ -589,11 +594,11 @@ async function addServer(event) {
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Ekleme başarısız', 'error');
+            showToast(data.error || 'Failed to add server', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -604,12 +609,12 @@ function toggleCustomCreds() {
 
 function deleteServer(id) {
     const server = servers.find(s => s.id === id);
-    const serverName = server ? (server.hostname || server.ip) : 'Bu sunucu';
+    const serverName = server ? (server.hostname || server.ip) : 'This server';
     
     showConfirm(
-        '🗑️ Sunucu Sil',
-        `"${serverName}" sunucusunu silmek istediğinize emin misiniz?`,
-        'Evet, Sil',
+        '🗑️ Delete Server',
+        `Are you sure you want to delete server "${serverName}"?`,
+        'Yes, Delete',
         async (confirmed) => {
             if (!confirmed) return;
             
@@ -623,15 +628,15 @@ function deleteServer(id) {
                 hideLoading();
                 
                 if (data.success) {
-                    showToast('Sunucu silindi!', 'success');
+                    showToast('Server deleted!', 'success');
                     await loadServers();
                     await loadStats();
                 } else {
-                    showToast(data.error || 'Silme başarısız', 'error');
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (error) {
                 hideLoading();
-                showToast('Hata oluştu', 'error');
+                showToast('An error occurred', 'error');
             }
         }
     );
@@ -639,7 +644,7 @@ function deleteServer(id) {
 
 function clearAllServers() {
     if (servers.length === 0) {
-        showToast('Silinecek sunucu yok', 'warning');
+        showToast('No servers to delete', 'warning');
         return;
     }
     
@@ -647,29 +652,29 @@ function clearAllServers() {
     let title, message, endpoint;
     
     if (currentProjectId === null) {
-        title = '⚠️ Tüm Sunucuları Sil';
-        message = `TÜM sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        title = '⚠️ Delete All Servers';
+        message = `Are you sure you want to delete ALL servers (${servers.length} server${servers.length !== 1 ? 's' : ''})?\n\nThis action cannot be undone!`;
         endpoint = '/api/servers/clear';
     } else if (currentProjectId === 'unassigned') {
-        title = '⚠️ Atanmamış Sunucuları Sil';
-        message = `Atanmamış sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        title = '⚠️ Delete Unassigned Servers';
+        message = `Are you sure you want to delete unassigned servers (${servers.length} server${servers.length !== 1 ? 's' : ''})?\n\nThis action cannot be undone!`;
         endpoint = '/api/servers/clear?project_id=unassigned';
     } else {
         const project = projects.find(p => p.id === currentProjectId);
-        const projectName = project ? project.name : 'Seçili proje';
-        title = `⚠️ "${projectName}" Sunucularını Sil`;
-        message = `"${projectName}" projesindeki sunucuları (${servers.length} adet) silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`;
+        const projectName = project ? project.name : 'Selected project';
+        title = `⚠️ Delete "${projectName}" Servers`;
+        message = `Are you sure you want to delete servers in project "${projectName}" (${servers.length} server${servers.length !== 1 ? 's' : ''})?\n\nThis action cannot be undone!`;
         endpoint = `/api/servers/clear?project_id=${currentProjectId}`;
     }
     
     showConfirm(
         title,
         message,
-        'Evet, Sil',
+        'Yes, Delete',
         async (confirmed) => {
             if (!confirmed) return;
             
-            showLoading('Sunucular siliniyor...');
+            showLoading('Deleting servers...');
             
             try {
                 const data = await apiCall(endpoint, {
@@ -679,15 +684,15 @@ function clearAllServers() {
                 hideLoading();
                 
                 if (data.success) {
-                    showToast(data.message || 'Sunucular silindi!', 'success');
+                    showToast(data.message || 'Servers deleted!', 'success');
                     await loadServers();
                     await loadStats();
                 } else {
-                    showToast(data.error || 'Silme başarısız', 'error');
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (error) {
                 hideLoading();
-                showToast('Hata oluştu', 'error');
+                showToast('An error occurred', 'error');
             }
         }
     );
@@ -713,7 +718,7 @@ async function importServers(event) {
         projectIdToAssign = currentProjectId;
     }
     
-    showLoading('Sunucular import ediliyor...');
+    showLoading('Importing servers...');
     
     try {
         let response;
@@ -745,11 +750,11 @@ async function importServers(event) {
         
         if (data.success) {
             const result = data.result;
-            let msg = `${result.success} sunucu eklendi.`;
+            let msg = `${result.success} server${result.success !== 1 ? 's' : ''} added.`;
             if (projectIdToAssign) {
                 const project = projects.find(p => p.id === projectIdToAssign);
                 if (project) {
-                    msg += ` (Proje: ${project.name})`;
+                    msg += ` (Project: ${project.name})`;
                 }
             }
             if (result.detected > 0) {
@@ -763,18 +768,18 @@ async function importServers(event) {
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Import başarısız', 'error');
+            showToast(data.error || 'Import failed', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
 // ==================== SCANNING ====================
 
 async function scanServer(id) {
-    showLoading('Taranıyor...');
+    showLoading('Scanning...');
     
     try {
         const data = await apiCall(`/api/scan/${id}`, {
@@ -789,26 +794,37 @@ async function scanServer(id) {
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Tarama başarısız', 'error');
+            showToast(data.error || 'Scan failed', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
 async function scanAllServers() {
     if (servers.length === 0) {
-        showToast('Taranacak sunucu yok', 'warning');
+        showToast('No servers to scan', 'warning');
         return;
     }
     
     const btn = document.getElementById('btnScanAll');
     if (btn) btn.disabled = true;
-    showLoading(`${servers.length} sunucu taranıyor...`);
+    
+    // Build endpoint with project filter
+    let endpoint = '/api/scan-all';
+    if (currentProjectId !== null) {
+        if (currentProjectId === 'unassigned') {
+            endpoint += '?project_id=unassigned';
+        } else {
+            endpoint += `?project_id=${currentProjectId}`;
+        }
+    }
+    
+    showLoading(`Scanning ${servers.length} server${servers.length > 1 ? 's' : ''}...`);
     
     try {
-        const data = await apiCall('/api/scan-all', {
+        const data = await apiCall(endpoint, {
             method: 'POST'
         });
         
@@ -816,20 +832,20 @@ async function scanAllServers() {
         if (btn) btn.disabled = false;
         
         if (data.success) {
-            let msg = `Tarama tamamlandı: ${data.online} çevrimiçi, ${data.offline} çevrimdışı`;
+            let msg = `Scan completed: ${data.online} online, ${data.offline} offline`;
             if (data.skipped > 0) {
-                msg += `, ${data.skipped} atlandı (kimlik bilgisi yok)`;
+                msg += `, ${data.skipped} skipped (missing credentials)`;
             }
             showToast(msg, 'success');
             await loadServers();
             await loadStats();
         } else {
-            showToast(data.error || 'Tarama başarısız', 'error');
+            showToast(data.error || 'Scan failed', 'error');
         }
     } catch (error) {
         hideLoading();
         if (btn) btn.disabled = false;
-        showToast('Hata oluştu', 'error');
+        showToast('An error occurred', 'error');
     }
 }
 
@@ -840,12 +856,12 @@ function showExportModal() {
     const exportCurrentName = document.getElementById('exportCurrentProjectName');
     if (exportCurrentName) {
         if (currentProjectId === null) {
-            exportCurrentName.textContent = 'Tüm sunucular (filtre yok)';
+            exportCurrentName.textContent = 'All servers (no filter)';
         } else if (currentProjectId === 'unassigned') {
-            exportCurrentName.textContent = 'Atanmamış sunucular';
+            exportCurrentName.textContent = 'Unassigned servers';
         } else {
             const project = projects.find(p => p.id === currentProjectId);
-            exportCurrentName.textContent = project ? project.name : 'Seçili proje';
+            exportCurrentName.textContent = project ? project.name : 'Selected project';
         }
     }
     
@@ -856,11 +872,11 @@ function exportCurrentProject() {
     closeModal('exportModal');
     
     if (servers.length === 0) {
-        showToast('Export edilecek sunucu yok', 'warning');
+        showToast('No servers to export', 'warning');
         return;
     }
     
-    showLoading('Excel raporu oluşturuluyor...');
+    showLoading('Generating Excel report...');
     
     let endpoint = `${API_BASE}/api/export/excel`;
     
@@ -884,7 +900,7 @@ function exportCurrentProject() {
 function exportAllProjects() {
     closeModal('exportModal');
     
-    showLoading('Tüm projeler Excel raporu oluşturuluyor...');
+    showLoading('Generating Excel report for all projects...');
     
     const link = document.createElement('a');
     link.href = `${API_BASE}/api/export/excel/all-projects`;
@@ -895,7 +911,7 @@ function exportAllProjects() {
     
     setTimeout(() => {
         hideLoading();
-        showToast('Tüm projeler Excel raporu indirildi!', 'success');
+        showToast('All projects Excel report downloaded!', 'success');
     }, 1500);
 }
 
@@ -929,7 +945,7 @@ function renderTable() {
             <td>
                 <div class="action-buttons">
                     <button class="action-btn" onclick="showServerDetails(${server.id})" title="Detaylar">👁️</button>
-                    <button class="action-btn" onclick="showAssignProjectModal(${server.id})" title="Projeye Ata">📂</button>
+                    <button class="action-btn" onclick="showAssignProjectModal(${server.id})" title="Assign to Project">📂</button>
                     <button class="action-btn" onclick="showSetCredsModal(${server.id})" title="Kimlik Bilgisi">🔑</button>
                     <button class="action-btn scan" onclick="scanServer(${server.id})" title="Tara">🔄</button>
                     <button class="action-btn delete" onclick="deleteServer(${server.id})" title="Sil">🗑️</button>
@@ -942,7 +958,7 @@ function renderTable() {
 
 function renderProjectBadge(projectName) {
     if (!projectName) {
-        return '<span class="project-badge unassigned">Atanmamış</span>';
+        return '<span class="project-badge unassigned">Unassigned</span>';
     }
     return `<span class="project-badge">${escapeHtml(projectName)}</span>`;
 }
@@ -1040,7 +1056,7 @@ function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.hostname || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">IP Adresi</span>
+                    <span class="detail-label">IP Address</span>
                     <span class="detail-value">${escapeHtml(server.ip)}</span>
                 </div>
                 <div class="detail-row">
@@ -1048,11 +1064,11 @@ function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.domain || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">İşletim Sistemi</span>
+                    <span class="detail-label">Operating System</span>
                     <span class="detail-value">${escapeHtml(server.os_type)}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">OS Versiyonu</span>
+                    <span class="detail-label">OS Version</span>
                     <span class="detail-value">${escapeHtml(server.os_version || '-')}</span>
                 </div>
             </div>
@@ -1068,19 +1084,19 @@ function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.model || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Seri No</span>
+                    <span class="detail-label">Serial Number</span>
                     <span class="detail-value">${escapeHtml(server.serial || '-')}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>⚡ İşlemci</h3>
+                <h3>⚡ CPU</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Çekirdek</span>
+                    <span class="detail-label">Cores</span>
                     <span class="detail-value">${escapeHtml(server.cpu_cores || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Mantıksal İşlemci</span>
+                    <span class="detail-label">Logical Processors</span>
                     <span class="detail-value">${escapeHtml(server.cpu_logical_processors || '-')}</span>
                 </div>
                 <div class="detail-row">
@@ -1096,23 +1112,23 @@ function showServerDetails(id) {
                     <span class="detail-value">${escapeHtml(server.ram_physical || '-')}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Toplam RAM</span>
+                    <span class="detail-label">Total RAM</span>
                     <span class="detail-value">${formatRAM(server.ram_logical)}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>💾 Depolama</h3>
+                <h3>💾 Storage</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Disk Bilgisi</span>
+                    <span class="detail-label">Disk Info</span>
                     <span class="detail-value">${escapeHtml(server.disk_info || '-')}</span>
                 </div>
             </div>
             
             <div class="detail-section">
-                <h3>🌐 Ağ</h3>
+                <h3>🌐 Network</h3>
                 <div class="detail-row">
-                    <span class="detail-label">Birincil Ağ</span>
+                    <span class="detail-label">Primary Network</span>
                     <span class="detail-value">${escapeHtml(server.network_primary || '-')}</span>
                 </div>
             </div>
@@ -1134,7 +1150,7 @@ function showSetCredsModal(serverId) {
     const passwordInput = document.getElementById('credPassword');
     
     if (serverIdInput) serverIdInput.value = serverId;
-    if (serverInfo) serverInfo.textContent = `Sunucu: ${server.ip} (${server.os_type})`;
+    if (serverInfo) serverInfo.textContent = `Server: ${server.ip} (${server.os_type})`;
     if (usernameInput) usernameInput.value = '';
     if (passwordInput) passwordInput.value = '';
     
@@ -1149,11 +1165,11 @@ async function saveServerCredentials(event) {
     const password = document.getElementById('credPassword').value;
     
     if (!username || !password) {
-        showToast('Kullanıcı adı ve şifre giriniz', 'warning');
+        showToast('Please enter username and password', 'warning');
         return;
     }
     
-    showLoading('Kaydediliyor...');
+    showLoading('Saving...');
     
     try {
         const data = await apiCall(`/api/servers/${serverId}/credentials`, {
@@ -1164,15 +1180,16 @@ async function saveServerCredentials(event) {
         hideLoading();
         
         if (data.success) {
-            showToast('Kimlik bilgileri kaydedildi!', 'success');
+            showToast('Credentials saved!', 'success');
             closeModal('setCredsModal');
             await loadServers();
         } else {
-            showToast(data.error || 'Kayıt başarısız', 'error');
+            showToast(data.error || 'Failed to save', 'error');
         }
     } catch (error) {
         hideLoading();
-        showToast('Hata oluştu', 'error');
+        console.error('Error saving credentials:', error);
+        showToast('An error occurred: ' + (error.message || 'Unknown error'), 'error');
     }
 }
 
@@ -1246,7 +1263,7 @@ function showImportModal() {
                 projectNote.style.cssText = 'margin-top: 10px; padding: 8px; background: rgba(16, 185, 129, 0.1); border-radius: 6px; color: var(--accent-primary);';
                 importInfo.appendChild(projectNote);
             }
-            projectNote.innerHTML = `📂 Sunucular <strong>"${escapeHtml(project.name)}"</strong> projesine eklenecek`;
+            projectNote.innerHTML = `📂 Servers will be added to project <strong>"${escapeHtml(project.name)}"</strong>`;
         }
     } else {
         const projectNote = document.querySelector('#importModal .project-note');
@@ -1341,7 +1358,7 @@ function showToast(message, type = 'info') {
 function refreshServers() {
     loadServers();
     loadStats();
-    showToast('Veriler yenilendi', 'info');
+    showToast('Data refreshed', 'info');
 }
 
 function updateEmptyState() {
