@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Building ServerScout v1.2.0
+echo Building ServerScout v1.2.1
 echo ========================================
 echo.
 
@@ -40,7 +40,7 @@ echo Installing dependencies if needed...
 call npm install --silent
 
 echo.
-echo Building Portable version (v1.2.0)...
+echo Building Portable version (v1.2.1)...
 call npm run build:portable
 if %ERRORLEVEL% NEQ 0 (
     echo Portable build failed!
@@ -50,7 +50,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo Building Installer version (v1.2.0)...
+echo Building Installer version (v1.2.1)...
 call npm run build:win
 if %ERRORLEVEL% NEQ 0 (
     echo Installer build failed!
@@ -69,8 +69,8 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Output files in electron\dist\:
-echo   - Portable: ServerScout-Portable-1.2.0.exe
-echo   - Installer: ServerScout-Setup-1.2.0.exe
+echo   - Portable: ServerScout-Portable-1.2.1.exe
+echo   - Installer: ServerScout-Setup-1.2.1.exe
 echo.
 echo Note: win-unpacked folder is intermediate build output.
 echo       You can delete it - only the .exe files are needed.

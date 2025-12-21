@@ -1,6 +1,6 @@
 {
   "name": "serverscout",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Server Inventory Management Tool - Developed by Fatih Tunahan Sakin",
   "main": "main.js",
   "scripts": {
