@@ -496,7 +496,7 @@ async function saveCredentials(osType) {
             } else {
                 document.getElementById('linuxPassword').value = '';
             }
-            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} bilgileri kaydedildi!`, 'success');
+            showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} credentials saved!`, 'success');
         } else {
             showToast(data.error || 'Failed to save', 'error');
         }
@@ -618,7 +618,7 @@ function deleteServer(id) {
         async (confirmed) => {
             if (!confirmed) return;
             
-            showLoading('Siliniyor...');
+            showLoading('Deleting...');
             
             try {
                 const data = await apiCall(`/api/servers/${id}`, {
@@ -790,7 +790,7 @@ async function scanServer(id) {
         
         if (data.success) {
             const status = data.result.status;
-            showToast(`Tarama tamamlandı: ${status}`, status === 'Online' ? 'success' : 'warning');
+            showToast(`Scan completed: ${status}`, status === 'Online' ? 'success' : 'warning');
             await loadServers();
             await loadStats();
         } else {
@@ -868,7 +868,7 @@ function showExportModal() {
     showModal('exportModal');
 }
 
-function exportCurrentProject() {
+async function exportCurrentProject() {
     closeModal('exportModal');
     
     if (servers.length === 0) {
@@ -884,35 +884,83 @@ function exportCurrentProject() {
         endpoint = `${API_BASE}/api/export/excel/project/${currentProjectId}`;
     }
     
-    const link = document.createElement('a');
-    link.href = endpoint;
-    link.download = '';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    setTimeout(() => {
+    try {
+        const response = await fetch(endpoint);
+        
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'inventory_report.xlsx';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
         hideLoading();
-        showToast('Excel raporu indirildi!', 'success');
-    }, 1000);
+        showToast('Excel report downloaded!', 'success');
+    } catch (error) {
+        hideLoading();
+        showToast('Export failed: ' + (error.message || 'Unknown error'), 'error');
+        console.error('Export error:', error);
+    }
 }
 
-function exportAllProjects() {
+async function exportAllProjects() {
     closeModal('exportModal');
     
     showLoading('Generating Excel report for all projects...');
     
-    const link = document.createElement('a');
-    link.href = `${API_BASE}/api/export/excel/all-projects`;
-    link.download = '';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    setTimeout(() => {
+    try {
+        const response = await fetch(`${API_BASE}/api/export/excel/all-projects`);
+        
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'all_projects_report.xlsx';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
         hideLoading();
         showToast('All projects Excel report downloaded!', 'success');
-    }, 1500);
+    } catch (error) {
+        hideLoading();
+        showToast('Export failed: ' + (error.message || 'Unknown error'), 'error');
+        console.error('Export error:', error);
+    }
 }
 
 // Keep old function for backward compatibility
@@ -1308,7 +1356,7 @@ document.addEventListener('keydown', (e) => {
 
 // ==================== LOADING ====================
 
-function showLoading(text = 'Yükleniyor...') {
+function showLoading(text = 'Loading...') {
     if (isLoading) return;
     isLoading = true;
     

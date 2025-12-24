@@ -59,3 +59,6 @@ git push origin main
 ```
 
 Eğer hala hata verirse, o zaman history temizleme gerekir.
+
+
+

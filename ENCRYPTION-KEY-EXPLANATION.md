@@ -58,3 +58,6 @@
 
 **Özet:** Key tamamen otomatik, kullanıcı müdahalesi gerektirmez. Sadece uygulamayı çalıştırın, gerisi otomatik!
 
+
+
+

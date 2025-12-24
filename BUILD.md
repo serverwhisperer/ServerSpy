@@ -100,10 +100,14 @@ If you see icon warnings, you can:
 
 ## Version Information
 
-Current Version: **1.2.0**
+Current Version: **1.2.1**
 
 To update version, edit:
-- `electron\package.json` → `"version": "1.2.0"`
+- `electron\package.json` → `"version": "1.2.1"`
+- `build-all.bat` → Update version references
+
+
+
 
 
 

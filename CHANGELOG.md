@@ -1,6 +1,31 @@
 # 📝 Changelog - Son Güncellemeler
 
-## 🎯 2025-12-21 - Büyük Güncelleme
+## 🐛 2025-01-XX - Version 1.2.1 - Bug Fixes
+
+### ✅ Düzeltilen Hatalar
+
+1. **Excel Export Sorunu**
+   - Export butonuna tıklandığında dosya oluşturuluyordu ama indirilmiyordu
+   - Düzeltildi: Frontend'de fetch API ile blob indirme kullanılıyor
+   - Artık Excel dosyaları düzgün şekilde indiriliyor
+
+2. **Türkçe Mesajlar**
+   - Bazı kullanıcı mesajları Türkçe'ydi
+   - Düzeltildi: Tüm mesajlar İngilizce'ye çevrildi
+   - "Linux bilgileri kaydedildi!" → "Linux credentials saved!"
+   - "Siliniyor..." → "Deleting..."
+   - "Tarama tamamlandı" → "Scan completed"
+   - "Yükleniyor..." → "Loading..."
+
+### 🔧 Teknik İyileştirmeler
+
+- Frontend export fonksiyonları `async/await` ile güncellendi
+- Blob indirme ile dosya güvenliği artırıldı
+- Hata yönetimi iyileştirildi
+
+---
+
+## 🎯 2025-12-21 - Version 1.2.0 - Büyük Güncelleme
 
 ### ✅ Yapılan İyileştirmeler
 
@@ -81,4 +106,7 @@
 ---
 
 **Not:** Tüm değişiklikler test edildi ve çalışıyor. Electron app artık sorunsuz başlıyor!
+
+
+
 

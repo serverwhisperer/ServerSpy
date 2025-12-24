@@ -72,3 +72,6 @@ Eğer database kullanmak istemiyorsanız, in-memory (RAM'de) saklama yapabiliriz
 
 **Sonuç:** Database sadece **geçici veri saklama** için kullanılıyor. Veriler **kalıcı değil**, her uygulama başlangıcında temizleniyor. Güvenlik açısından sorun yok.
 
+
+
+

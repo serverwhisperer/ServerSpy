@@ -54,8 +54,14 @@ from database import (
 )
 from scanner import scan_server, scan_all_servers, detect_os_type
 from excel_export import generate_excel_report, generate_project_excel_report, generate_all_projects_excel_report
-from encryption import encrypt_password, decrypt_password, sanitize_server_data
+from encryption import encrypt_password, decrypt_password, sanitize_server_data, rotate_encryption_key, get_key_info
 from validation import validate_ip, validate_username, validate_password, validate_project_name, validate_os_type
+from audit import (
+    audit_server_add, audit_server_delete, audit_server_clear,
+    audit_password_access, audit_credential_update, audit_export,
+    audit_scan_start, audit_scan_complete, audit_project_create,
+    audit_project_delete, audit_key_rotation
+)
 
 # Import configuration
 from config import get_frontend_path, SERVER_HOST, SERVER_PORT, USE_HTTPS
@@ -178,7 +184,9 @@ def api_update_server_credentials(srv_id):
         ok = update_server_credentials(srv_id, user, pwd)
         
         if ok:
+            audit_credential_update(srv_id, srv.get('ip'), request, success=True)
             return jsonify({'success': True})
+        audit_credential_update(srv_id, srv.get('ip'), request, success=False)
         return jsonify({'success': False, 'error': 'Update failed'}), 500
     except Exception as e:
         logging.error(f"Error updating credentials: {e}", exc_info=True)
@@ -214,6 +222,9 @@ def api_get_server(srv_id):
     try:
         srv = get_server(srv_id)
         if srv:
+            # Audit log password access (even though password is sanitized in response)
+            if srv.get('password'):
+                audit_password_access(srv_id, srv.get('ip'), request)
             srv = sanitize_server_data(srv)
             return jsonify({'success': True, 'server': srv})
         return jsonify({'success': False, 'error': 'Server not found'}), 404
@@ -279,11 +290,15 @@ def api_add_server():
         res = add_server(ip_addr, user, pwd, os_t, proj_id)
         
         if res['success']:
+            # Audit log
+            audit_server_add(ip_addr, res['id'], request, success=True)
             resp = {'success': True, 'id': res['id']}
             if auto_detected:
                 resp['detected'] = True
                 resp['os_type'] = os_t
             return jsonify(resp)
+        # Audit log failure
+        audit_server_add(ip_addr, None, request, success=False)
         return jsonify({'success': False, 'error': res.get('error', 'Failed to add server')}), 400
         
     except Exception as e:
@@ -294,8 +309,14 @@ def api_add_server():
 @app.route('/api/servers/<int:srv_id>', methods=['DELETE'])
 def api_delete_server(srv_id):
     try:
+        # Get server info before deletion for audit
+        srv = get_server(srv_id)
+        server_ip = srv.get('ip') if srv else None
+        
         if delete_server(srv_id):
+            audit_server_delete(srv_id, server_ip, request, success=True)
             return jsonify({'success': True})
+        audit_server_delete(srv_id, server_ip, request, success=False)
         return jsonify({'success': False, 'error': 'Server not found'}), 404
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
@@ -310,16 +331,21 @@ def api_clear_servers():
         if proj_id is None:
             cnt = clear_all_servers()
             msg = 'All servers deleted'
+            audit_project_id = None
         elif proj_id == 'unassigned':
             cnt = clear_unassigned_servers()
             msg = 'Unassigned servers deleted'
+            audit_project_id = 'unassigned'
         else:
-            cnt = clear_servers_by_project(int(proj_id))
+            audit_project_id = int(proj_id)
+            cnt = clear_servers_by_project(audit_project_id)
             msg = 'Project servers deleted'
         
+        audit_server_clear(request, audit_project_id, cnt, success=True)
         return jsonify({'success': True, 'deleted': cnt, 'message': msg})
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
+        audit_server_clear(request, None, 0, success=False)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
@@ -435,7 +461,9 @@ def api_create_project():
             return jsonify({'success': False, 'error': 'Project name is required'}), 400
         res = create_project(name)
         if res['success']:
+            audit_project_create(res['id'], name, request, success=True)
             return jsonify({'success': True, 'id': res['id']})
+        audit_project_create(None, name, request, success=False)
         return jsonify({'success': False, 'error': res['error']}), 400
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
@@ -483,8 +511,14 @@ def api_rename_project(proj_id):
 @app.route('/api/projects/<int:proj_id>', methods=['DELETE'])
 def api_delete_project(proj_id):
     try:
+        # Get project info before deletion for audit
+        proj = get_project(proj_id)
+        proj_name = proj['name'] if proj else None
+        
         if delete_project(proj_id):
+            audit_project_delete(proj_id, proj_name, request, success=True)
             return jsonify({'success': True})
+        audit_project_delete(proj_id, proj_name, request, success=False)
         return jsonify({'success': False, 'error': 'Project not found'}), 404
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
@@ -656,6 +690,8 @@ def api_export_excel():
         srv_list = get_all_servers()
         stats = get_server_stats()
         filepath = generate_excel_report(srv_list, stats)
+        audit_export(os.path.basename(filepath), None, request, success=True)
+        # File is kept in exports folder after sending
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
@@ -672,6 +708,7 @@ def api_export_project_excel(proj_id):
         srv_list = get_servers_by_project(proj_id)
         stats = get_server_stats(proj_id)
         filepath = generate_project_excel_report(proj['name'], srv_list, stats)
+        audit_export(os.path.basename(filepath), proj_id, request, success=True)
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
@@ -691,6 +728,7 @@ def api_export_all_projects_excel():
         unassigned_srv = get_unassigned_servers()
         unassigned_stats = get_server_stats_unassigned()
         filepath = generate_all_projects_excel_report(proj_data, unassigned_srv, unassigned_stats)
+        audit_export(os.path.basename(filepath), None, request, success=True)
         return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath),
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
@@ -993,6 +1031,57 @@ def api_get_stats():
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+
+# ==================== KEY ROTATION API ====================
+
+@app.route('/api/security/key/info', methods=['GET'])
+def api_get_key_info():
+    """Get encryption key information (safe - no actual key data)"""
+    try:
+        key_info = get_key_info()
+        return jsonify({'success': True, 'key_info': key_info})
+    except Exception as e:
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+
+@app.route('/api/security/key/rotate', methods=['POST'])
+def api_rotate_key():
+    """Rotate encryption key - re-encrypt all passwords with new key"""
+    try:
+        # Audit log key rotation start
+        logging.info("Key rotation started by API request")
+        
+        result = rotate_encryption_key()
+        
+        if result['success']:
+            audit_key_rotation(
+                old_key_id=None,  # We don't store key IDs, just track rotation
+                new_key_id=None,
+                servers_updated=result['servers_updated'],
+                success=True
+            )
+            return jsonify({
+                'success': True,
+                'message': 'Key rotation completed successfully',
+                'servers_updated': result['servers_updated'],
+                'servers_failed': result.get('servers_failed', 0),
+                'total_servers': result.get('total_servers', 0)
+            })
+        else:
+            audit_key_rotation(None, None, 0, success=False)
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Key rotation failed'),
+                'servers_updated': result.get('servers_updated', 0)
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"Key rotation error: {e}", exc_info=True)
+        audit_key_rotation(None, None, 0, success=False)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
 
 # Main
 

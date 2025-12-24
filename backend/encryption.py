@@ -6,6 +6,7 @@ import os
 import sys
 import base64
 import logging
+from datetime import datetime
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -200,4 +201,193 @@ def sanitize_server_data(data):
         return result
     
     return data
+
+
+# ==================== KEY ROTATION ====================
+
+def get_old_key_path():
+    """Get path for old key backup"""
+    key_dir = os.path.dirname(get_key_file_path())
+    return os.path.join(key_dir, '.encryption_key.old')
+
+
+def decrypt_with_key(enc_pwd, key):
+    """Decrypt password with a specific key"""
+    if not enc_pwd or enc_pwd == '':
+        return ''
+    
+    try:
+        enc_bytes = base64.urlsafe_b64decode(enc_pwd.encode('utf-8'))
+        f = Fernet(key)
+        dec = f.decrypt(enc_bytes)
+        return dec.decode('utf-8')
+    except Exception as e:
+        logging.error(f"Decrypt with key error: {e}")
+        return ''
+
+
+def encrypt_with_key(pwd, key):
+    """Encrypt password with a specific key"""
+    if not pwd or pwd == '' or pwd == 'pending':
+        return ''
+    
+    try:
+        if isinstance(pwd, str):
+            pwd = pwd.encode('utf-8')
+        
+        f = Fernet(key)
+        enc = f.encrypt(pwd)
+        return base64.urlsafe_b64encode(enc).decode('utf-8')
+    except Exception as e:
+        logging.error(f"Encrypt with key error: {e}")
+        return ''
+
+
+def rotate_encryption_key(callback_progress=None):
+    """
+    Rotate the encryption key - re-encrypt all passwords with new key
+    
+    Args:
+        callback_progress: Optional callback function(processed, total, current_item) for progress updates
+    
+    Returns:
+        dict with 'success', 'servers_updated', 'error'
+    """
+    global _key, _fernet
+    
+    try:
+        # Get old key
+        old_key = get_or_create_encryption_key()
+        old_fernet = Fernet(old_key)
+        
+        # Generate new key
+        new_key = generate_key()
+        new_fernet = Fernet(new_key)
+        
+        # Import database functions here to avoid circular imports
+        from database import get_db_connection
+        
+        servers_updated = 0
+        servers_failed = 0
+        total_servers = 0
+        
+        # Get all servers with encrypted passwords
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT id, password FROM servers WHERE password != "" AND password IS NOT NULL')
+            servers = cur.fetchall()
+            total_servers = len(servers)
+            
+            if callback_progress:
+                callback_progress(0, total_servers, None)
+            
+            # Re-encrypt each password
+            for idx, server in enumerate(servers):
+                server_id = server['id']
+                old_enc_pwd = server['password']
+                
+                try:
+                    # Decrypt with old key
+                    plain_pwd = decrypt_with_key(old_enc_pwd, old_key)
+                    
+                    if plain_pwd:
+                        # Encrypt with new key
+                        new_enc_pwd = encrypt_with_key(plain_pwd, new_key)
+                        
+                        # Update in database
+                        cur.execute('UPDATE servers SET password = ? WHERE id = ?', (new_enc_pwd, server_id))
+                        servers_updated += 1
+                    else:
+                        logging.warning(f"Failed to decrypt password for server {server_id}, skipping")
+                        servers_failed += 1
+                    
+                    if callback_progress:
+                        callback_progress(idx + 1, total_servers, server_id)
+                        
+                except Exception as e:
+                    logging.error(f"Failed to re-encrypt password for server {server_id}: {e}")
+                    servers_failed += 1
+                    continue
+            
+            conn.commit()
+        
+        # Backup old key (optional - for recovery if needed)
+        try:
+            old_key_path = get_old_key_path()
+            if HAS_WIN32CRYPT:
+                enc_old_key = win32crypt.CryptProtectData(old_key, "ServerScout Encryption Key (OLD)", None, None, None, 0)
+            else:
+                master = _get_master_key()
+                if master:
+                    f = Fernet(master)
+                    enc_old_key = f.encrypt(old_key)
+                else:
+                    enc_old_key = old_key
+            
+            with open(old_key_path, 'wb') as f:
+                f.write(enc_old_key)
+            
+            if hasattr(os, 'chmod'):
+                os.chmod(old_key_path, 0o600)
+                
+            logging.info(f"Old key backed up to: {old_key_path}")
+        except Exception as e:
+            logging.warning(f"Failed to backup old key: {e}")
+        
+        # Save new key
+        save_encryption_key(new_key)
+        
+        # Clear cache to force reload with new key
+        _key = new_key
+        _fernet = new_fernet
+        
+        logging.info(f"Key rotation completed: {servers_updated} servers updated, {servers_failed} failed")
+        
+        return {
+            'success': True,
+            'servers_updated': servers_updated,
+            'servers_failed': servers_failed,
+            'total_servers': total_servers
+        }
+        
+    except Exception as e:
+        logging.error(f"Key rotation failed: {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': str(e),
+            'servers_updated': servers_updated if 'servers_updated' in locals() else 0
+        }
+
+
+def get_key_info():
+    """
+    Get information about current encryption key
+    
+    Returns:
+        dict with key information (safe to log - no actual key data)
+    """
+    try:
+        key_path = get_key_file_path()
+        key_exists = os.path.exists(key_path)
+        
+        info = {
+            'key_exists': key_exists,
+            'key_path': key_path,
+            'key_size': 128,  # Fernet uses AES-128
+            'algorithm': 'AES-128 (Fernet)',
+            'protected_by': 'Windows DPAPI' if HAS_WIN32CRYPT else 'Master Key'
+        }
+        
+        if key_exists:
+            stat = os.stat(key_path)
+            info['key_file_size'] = stat.st_size
+            info['key_file_modified'] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        
+        return info
+    except Exception as e:
+        logging.error(f"Failed to get key info: {e}")
+        return {'error': str(e)}
+
+
+
 

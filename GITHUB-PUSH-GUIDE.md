@@ -45,3 +45,6 @@ Eğer direkt upload yapmak isterseniz:
 ## Önerilen Yöntem
 
 **GitHub web'den dosya silme** yöntemini kullanın - git history korunur.
+
+
+

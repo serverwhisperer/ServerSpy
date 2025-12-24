@@ -94,3 +94,6 @@ def scan_all_servers(servers_list, max_workers=10):
 
 **Not:** Kodlar artık daha "insan yazmış gibi" görünüyor. AI-generated pattern'leri kaldırıldı.
 
+
+
+
