@@ -4,6 +4,7 @@ import paramiko
 import winrm
 import socket
 import json
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -224,13 +225,35 @@ class LinuxScanner:
         data['domain'] = domain.strip() if domain else 'N/A'
         
         # Brand/Model/Serial (requires root/sudo for dmidecode)
-        data['brand'] = self.run_command('sudo dmidecode -s system-manufacturer 2>/dev/null') or 'N/A'
-        data['model'] = self.run_command('sudo dmidecode -s system-product-name 2>/dev/null') or 'N/A'
-        data['serial'] = self.run_command('sudo dmidecode -s system-serial-number 2>/dev/null') or 'N/A'
+        # Brand & Model (with fallback for Rocky Linux and systems without dmidecode)
+        brand = self.run_command('sudo dmidecode -s system-manufacturer 2>/dev/null')
+        if not brand or brand == 'N/A' or 'command not found' in brand.lower():
+            # Fallback: Try /sys filesystem
+            brand = self.run_command('cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null')
+        data['brand'] = brand or 'N/A'
         
-        # Motherboard
-        mb_manufacturer = self.run_command('sudo dmidecode -s baseboard-manufacturer 2>/dev/null') or ''
-        mb_product = self.run_command('sudo dmidecode -s baseboard-product-name 2>/dev/null') or ''
+        model = self.run_command('sudo dmidecode -s system-product-name 2>/dev/null')
+        if not model or model == 'N/A' or 'command not found' in model.lower():
+            # Fallback: Try /sys filesystem
+            model = self.run_command('cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null')
+        data['model'] = model or 'N/A'
+        
+        # Serial Number (with fallback)
+        serial = self.run_command('sudo dmidecode -s system-serial-number 2>/dev/null')
+        if not serial or serial == 'N/A' or 'command not found' in serial.lower():
+            # Fallback: Try /sys filesystem
+            serial = self.run_command('cat /sys/devices/virtual/dmi/id/product_serial 2>/dev/null')
+        data['serial'] = serial or 'N/A'
+        
+        # Motherboard (with fallback)
+        mb_manufacturer = self.run_command('sudo dmidecode -s baseboard-manufacturer 2>/dev/null')
+        if not mb_manufacturer or 'command not found' in mb_manufacturer.lower():
+            mb_manufacturer = self.run_command('cat /sys/devices/virtual/dmi/id/board_vendor 2>/dev/null')
+        
+        mb_product = self.run_command('sudo dmidecode -s baseboard-product-name 2>/dev/null')
+        if not mb_product or 'command not found' in mb_product.lower():
+            mb_product = self.run_command('cat /sys/devices/virtual/dmi/id/board_name 2>/dev/null')
+        
         data['motherboard'] = f"{mb_manufacturer} - {mb_product}".strip(' -') or 'N/A'
         
         # CPU Info
@@ -402,4 +425,84 @@ def scan_all_servers(servers_list, max_workers=10):
                 results.append({'id': srv['id'], 'ip': srv['ip'], 'status': 'Offline', 'error': str(e)})
     
     return results
+
+
+def discover_server(ip_addr, timeout=1):
+    """
+    Discover if server is reachable and detect OS type
+    Returns: {'ip': str, 'reachable': bool, 'os_type': str, 'open_ports': list}
+    """
+    result = {
+        'ip': ip_addr,
+        'reachable': False,
+        'os_type': 'Unknown',
+        'open_ports': []
+    }
+    
+    # Critical server ports (not router/gateway ports)
+    # SSH, RDP, WinRM are definitive server indicators
+    critical_ports = {
+        22: 'SSH',      # Linux servers
+        3389: 'RDP',    # Windows servers (RDP)
+        5985: 'WinRM',  # Windows servers (WinRM)
+    }
+    
+    # Additional ports (optional, for detection only)
+    additional_ports = {
+        445: 'SMB',
+        135: 'RPC'
+    }
+    
+    open_ports = []
+    has_critical_port = False
+    
+    # Check critical ports first
+    for port, desc in critical_ports.items():
+        if check_port(ip_addr, port, timeout):
+            open_ports.append(f"{port}/{desc}")
+            has_critical_port = True
+    
+    # Only mark as reachable if at least one CRITICAL port is open
+    # This prevents false positives from routers/gateways
+    if has_critical_port:
+        result['reachable'] = True
+        
+        # Check additional ports for more info
+        for port, desc in additional_ports.items():
+            if check_port(ip_addr, port, timeout):
+                open_ports.append(f"{port}/{desc}")
+    
+    if result['reachable']:
+        result['open_ports'] = open_ports
+        
+        # Detect OS based on open ports
+        if any('22' in p for p in open_ports):
+            result['os_type'] = 'Linux'
+        elif any(p.startswith('3389') or p.startswith('5985') or p.startswith('135') for p in open_ports):
+            result['os_type'] = 'Windows'
+        elif any('445' in p for p in open_ports):
+            result['os_type'] = 'Windows'
+    
+    return result
+
+
+def discover_servers_in_range(ip_list, max_workers=50):
+    """
+    Scan list of IPs and find active/reachable servers
+    Returns: list of {'ip': str, 'reachable': bool, 'os_type': str, 'open_ports': list}
+    """
+    active_servers = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ip = {executor.submit(discover_server, ip): ip for ip in ip_list}
+        
+        for future in concurrent.futures.as_completed(future_to_ip):
+            try:
+                result = future.result()
+                if result['reachable']:
+                    active_servers.append(result)
+            except Exception as e:
+                logging.error(f"Discovery error for IP: {e}")
+    
+    return active_servers
 

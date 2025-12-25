@@ -100,12 +100,16 @@ async function loadCredentials() {
         if (data.success) {
             const creds = data.credentials;
             if (creds.windows) {
-                document.getElementById('winUsername').value = creds.windows.username || '';
-                document.getElementById('winCredStatus').textContent = creds.windows.has_password ? '✓ Kayıtlı' : '';
+                const username = creds.windows.username || '';
+                const hasPassword = creds.windows.has_password && username; // Only show if both username and password exist
+                document.getElementById('winUsername').value = username;
+                document.getElementById('winCredStatus').textContent = hasPassword ? '✓ Saved' : '';
             }
             if (creds.linux) {
-                document.getElementById('linuxUsername').value = creds.linux.username || '';
-                document.getElementById('linuxCredStatus').textContent = creds.linux.has_password ? '✓ Kayıtlı' : '';
+                const username = creds.linux.username || '';
+                const hasPassword = creds.linux.has_password && username; // Only show if both username and password exist
+                document.getElementById('linuxUsername').value = username;
+                document.getElementById('linuxCredStatus').textContent = hasPassword ? '✓ Saved' : '';
             }
         }
     } catch (error) {
@@ -490,7 +494,7 @@ async function saveCredentials(osType) {
         });
         
         if (data.success) {
-            statusEl.textContent = '✓ Kayıtlı';
+            statusEl.textContent = '✓ Saved';
             if (osType === 'windows') {
                 document.getElementById('winPassword').value = '';
             } else {
@@ -523,6 +527,8 @@ async function clearCredentials(osType) {
                 document.getElementById('linuxCredStatus').textContent = '';
             }
             showToast(`${osType === 'windows' ? 'Windows' : 'Linux'} credentials cleared`, 'info');
+            // Reload credentials to ensure UI is updated
+            await loadCredentials();
         }
     } catch (error) {
         showToast('An error occurred', 'error');
@@ -1295,6 +1301,169 @@ function closeModal(modalId) {
     if (!hasOpenModal) {
         document.body.style.overflow = '';
     }
+}
+
+// ==================== IP RANGE ====================
+
+let ipRangeCounter = 0;
+
+function showIPRangeModal() {
+    ipRangeCounter = 0;
+    const list = document.getElementById('ipRangesList');
+    if (list) {
+        list.innerHTML = '';
+        // Add first range by default
+        addIPRangeRow();
+    }
+    showModal('ipRangeModal');
+}
+
+function addIPRangeRow() {
+    ipRangeCounter++;
+    const list = document.getElementById('ipRangesList');
+    if (!list) return;
+    
+    const row = document.createElement('div');
+    row.className = 'ip-range-row';
+    row.id = `ipRange${ipRangeCounter}`;
+    row.innerHTML = `
+        <div class="form-group" style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+            <label style="min-width: 60px;">Range ${ipRangeCounter}:</label>
+            <div style="display: flex; gap: 10px; align-items: center; flex: 1;">
+                <input type="text" placeholder="192.168.1.1" class="ip-range-start" style="flex: 1;" required>
+                <span>to</span>
+                <input type="text" placeholder="192.168.1.255" class="ip-range-end" style="flex: 1;" required>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeIPRangeRow(${ipRangeCounter})" title="Remove">
+                    ×
+                </button>
+            </div>
+        </div>
+    `;
+    list.appendChild(row);
+}
+
+function removeIPRangeRow(id) {
+    const row = document.getElementById(`ipRange${id}`);
+    if (row) {
+        row.remove();
+    }
+}
+
+async function addIPRanges(event) {
+    event.preventDefault();
+    
+    // Collect all IP ranges
+    const rows = document.querySelectorAll('.ip-range-row');
+    if (rows.length === 0) {
+        showToast('Add at least one IP range', 'warning');
+        return;
+    }
+    
+    const ranges = [];
+    for (const row of rows) {
+        const startInput = row.querySelector('.ip-range-start');
+        const endInput = row.querySelector('.ip-range-end');
+        
+        if (startInput && endInput) {
+            const start = startInput.value.trim();
+            const end = endInput.value.trim();
+            
+            if (!start || !end) {
+                showToast('Please fill all IP range fields', 'warning');
+                return;
+            }
+            
+            // Basic IP validation
+            if (!isValidIP(start) || !isValidIP(end)) {
+                showToast('Invalid IP address format', 'error');
+                return;
+            }
+            
+            ranges.push({ start, end });
+        }
+    }
+    
+    if (ranges.length === 0) {
+        showToast('No valid IP ranges found', 'warning');
+        return;
+    }
+    
+    // Get project assignment
+    let projectIdToAssign = null;
+    if (currentProjectId !== null && currentProjectId !== 'unassigned') {
+        projectIdToAssign = currentProjectId;
+    }
+    
+    const discoveryMode = document.getElementById('ipRangeDiscovery').checked;
+    
+    closeModal('ipRangeModal');
+    
+    // Show appropriate loading message
+    if (discoveryMode) {
+        showLoading(`🔍 Discovery Mode: Scanning IP ranges for active servers...`);
+    } else {
+        showLoading(`Processing ${ranges.length} IP range(s)...`);
+    }
+    
+    try {
+        const payload = { 
+            ip_ranges: ranges,
+            auto_detect: document.getElementById('ipRangeAutoDetect').checked,
+            discovery_mode: discoveryMode
+        };
+        
+        if (projectIdToAssign) {
+            payload.project_id = projectIdToAssign;
+        }
+        
+        const data = await apiCall('/api/servers/ip-ranges', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        
+        hideLoading();
+        
+        if (data.success) {
+            const result = data.result;
+            
+            if (discoveryMode) {
+                // Discovery mode results
+                if (result.scanned && result.found !== undefined) {
+                    showToast(
+                        `🎯 Discovery Complete! Scanned ${result.scanned} IPs, found ${result.found} active servers. ` +
+                        `Added ${result.added}, skipped ${result.skipped} duplicates.`, 
+                        'success'
+                    );
+                } else if (result.added === 0 && data.message) {
+                    showToast(`ℹ️ ${data.message}`, 'info');
+                } else {
+                    showToast(`Added ${result.added} servers (${result.skipped} duplicates)`, 'success');
+                }
+            } else {
+                // Normal mode results
+                showToast(`Added ${result.added} servers (${result.skipped} duplicates skipped)`, 'success');
+            }
+            
+            await loadServers();
+            await loadStats();
+        } else {
+            showToast(data.error || 'Failed to add IP ranges', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('An error occurred', 'error');
+        console.error(error);
+    }
+}
+
+function isValidIP(ip) {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    for (const part of parts) {
+        const num = parseInt(part, 10);
+        if (isNaN(num) || num < 0 || num > 255) return false;
+    }
+    return true;
 }
 
 function showImportModal() {

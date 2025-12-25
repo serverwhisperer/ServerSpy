@@ -172,7 +172,8 @@ function createWindow() {
     });
 
     // Load the Flask server URL (HTTPS for security)
-    mainWindow.loadURL(`https://localhost:${PORT}`);
+    // Use 127.0.0.1 instead of localhost to avoid DNS resolution issues
+    mainWindow.loadURL(`https://127.0.0.1:${PORT}`);
 
     // Open external links in default browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -189,7 +190,7 @@ function createWindow() {
             if (errorCode === -106) {
                 dialog.showErrorBox(
                     'Connection Error',
-                    `Cannot connect to backend server at https://localhost:${PORT}\n\n` +
+                    `Cannot connect to backend server at https://127.0.0.1:${PORT}\n\n` +
                     `Error: ${errorDescription}\n\n` +
                     `Please check:\n` +
                     `1. Backend server is running\n` +
@@ -202,10 +203,11 @@ function createWindow() {
     
     // Ignore certificate errors for self-signed certificate (localhost only)
     mainWindow.webContents.on('certificate-error', (event, url, error, certificate, callback) => {
-        // Only ignore for localhost
+        // Only ignore for localhost/127.0.0.1
         if (url.startsWith('https://localhost:') || url.startsWith('https://127.0.0.1:')) {
             event.preventDefault();
             callback(true); // Accept self-signed certificate
+            console.log('Accepted self-signed certificate for:', url);
         } else {
             callback(false); // Reject for other domains
         }

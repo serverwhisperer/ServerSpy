@@ -38,18 +38,26 @@ def get_frontend_path():
     # Try env var first (Electron sets this)
     fe_path = os.environ.get('FRONTEND_PATH')
     if fe_path and os.path.exists(fe_path):
-        return fe_path
+        return os.path.abspath(fe_path)
     
-    # Fallback
-    fe_path = '../frontend'
+    # Get the project root directory (parent of backend directory)
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(backend_dir)
+    fe_path = os.path.join(project_root, 'frontend')
+    
+    # Make it absolute
+    fe_path = os.path.abspath(fe_path)
+    
     if getattr(sys, 'frozen', False):
+        # In packaged mode, frontend is in resources
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
         res_dir = os.path.dirname(exe_dir)
         alt = os.path.join(res_dir, 'frontend')
         if os.path.exists(alt):
-            return alt
+            return os.path.abspath(alt)
     
     return fe_path
+
 
 
 

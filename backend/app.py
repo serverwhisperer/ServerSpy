@@ -52,7 +52,7 @@ from database import (
     rename_project, get_servers_by_project, get_unassigned_servers,
     assign_servers_to_project, get_all_projects_with_stats, get_server_stats_unassigned
 )
-from scanner import scan_server, scan_all_servers, detect_os_type
+from scanner import scan_server, scan_all_servers, detect_os_type, discover_servers_in_range
 from excel_export import generate_excel_report, generate_project_excel_report, generate_all_projects_excel_report
 from encryption import encrypt_password, decrypt_password, sanitize_server_data, rotate_encryption_key, get_key_info
 from validation import validate_ip, validate_username, validate_password, validate_project_name, validate_os_type
@@ -363,7 +363,12 @@ def api_bulk_import():
                 return jsonify({'success': True, 'result': res})
             elif data and 'content' in data:
                 proj_id = data.get('project_id')
-                srv_list = parse_server_list_content(data['content'])
+                # Check if it's IP ranges or regular IPs
+                use_ip_range = data.get('is_ip_range', False)
+                if use_ip_range:
+                    srv_list = parse_ip_ranges(data['content'])
+                else:
+                    srv_list = parse_server_list_content(data['content'])
                 res = bulk_add_servers(srv_list, proj_id)
                 return jsonify({'success': True, 'result': res})
             return jsonify({'success': False, 'error': 'No file or data provided'}), 400
@@ -398,6 +403,195 @@ def api_bulk_import():
     except Exception as e:
         logging.error(f"API error: {e}", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+
+@app.route('/api/servers/ip-ranges', methods=['POST'])
+def api_add_ip_ranges():
+    """Add servers from multiple IP ranges"""
+    try:
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
+        
+        ip_ranges = data.get('ip_ranges', [])
+        if not ip_ranges or not isinstance(ip_ranges, list):
+            return jsonify({'success': False, 'error': 'ip_ranges array is required'}), 400
+        
+        auto_detect = data.get('auto_detect', True)
+        discovery_mode = data.get('discovery_mode', False)  # NEW: Discovery mode
+        proj_id = data.get('project_id')
+        
+        if proj_id is not None:
+            try:
+                proj_id = int(proj_id)
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid project_id'}), 400
+        
+        # Expand all IP ranges
+        all_ips = []
+        for range_obj in ip_ranges:
+            if not isinstance(range_obj, dict):
+                continue
+            
+            start_ip = range_obj.get('start', '').strip()
+            end_ip = range_obj.get('end', '').strip()
+            
+            if not start_ip or not end_ip:
+                continue
+            
+            # Expand this range
+            ips = expand_ip_range_from_to(start_ip, end_ip)
+            all_ips.extend(ips)
+        
+        if not all_ips:
+            return jsonify({'success': False, 'error': 'No valid IPs found in ranges'}), 400
+        
+        logging.info(f"IP Range request: {len(all_ips)} IPs, discovery_mode={discovery_mode}")
+        
+        # Discovery Mode: Scan for active servers only
+        if discovery_mode:
+            logging.info(f"Starting discovery scan for {len(all_ips)} IPs...")
+            active_servers = discover_servers_in_range(all_ips, max_workers=50)
+            logging.info(f"Discovery complete: Found {len(active_servers)} active servers")
+            
+            # Create server list from discovered servers
+            srv_list = []
+            for srv_info in active_servers:
+                srv_list.append({
+                    'ip': srv_info['ip'],
+                    'username': '',
+                    'password': '',
+                    'os_type': srv_info['os_type']
+                })
+            
+            if not srv_list:
+                return jsonify({
+                    'success': True, 
+                    'result': {'added': 0, 'skipped': 0, 'failed': 0},
+                    'message': f'No active servers found in {len(all_ips)} IPs scanned',
+                    'scanned': len(all_ips)
+                })
+        else:
+            # Normal Mode: Add all IPs
+            srv_list = []
+            for ip in all_ips:
+                os_t = detect_os_type(ip) if auto_detect else 'Windows'
+                srv_list.append({
+                    'ip': ip,
+                    'username': '',
+                    'password': '',
+                    'os_type': os_t
+                })
+        
+        # Add servers
+        res = bulk_add_servers(srv_list, proj_id)
+        
+        # Add discovery info if applicable
+        if discovery_mode:
+            res['scanned'] = len(all_ips)
+            res['found'] = len(srv_list)
+        
+        return jsonify({'success': True, 'result': res})
+        
+    except Exception as e:
+        logging.error(f"API error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+
+def expand_ip_range_from_to(start_ip, end_ip):
+    """
+    Expand IP range from start_ip to end_ip
+    Returns: list of IP addresses
+    """
+    try:
+        start_ip = start_ip.strip()
+        end_ip = end_ip.strip()
+        
+        # Parse start IP
+        start_parts = start_ip.split('.')
+        if len(start_parts) != 4:
+            return []
+        
+        # Parse end IP
+        end_parts = end_ip.split('.')
+        if len(end_parts) != 4:
+            return []
+        
+        # Convert to integers
+        start_octets = [int(p) for p in start_parts]
+        end_octets = [int(p) for p in end_parts]
+        
+        # Generate IPs
+        ips = []
+        # For simplicity, only support last octet range
+        if start_parts[0:3] == end_parts[0:3]:
+            # Same network, only last octet changes
+            base = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}"
+            for i in range(start_octets[3], end_octets[3] + 1):
+                ips.append(f"{base}.{i}")
+        else:
+            # Full range - this gets complex, we'll support it later if needed
+            logging.warning(f"Complex IP range not fully supported yet: {start_ip} - {end_ip}")
+            return []
+        
+        return ips
+    except Exception as e:
+        logging.error(f"Error expanding IP range '{start_ip}' to '{end_ip}': {e}")
+        return []
+
+
+def expand_ip_range(range_str):
+    """
+    Expand IP range like '192.168.1.1-192.168.1.255' to list of IPs
+    Returns: list of IP addresses
+    """
+    try:
+        # Format: 192.168.1.1-192.168.1.255
+        if '-' not in range_str:
+            # Single IP
+            return [range_str.strip()]
+        
+        start_ip, end_ip = range_str.split('-')
+        return expand_ip_range_from_to(start_ip, end_ip)
+    except Exception as e:
+        logging.error(f"Error expanding IP range '{range_str}': {e}")
+        return []
+
+
+def parse_ip_ranges(content, auto_detect=True):
+    """
+    Parse IP ranges from text content
+    Format examples:
+        192.168.1.1-192.168.1.255
+        10.0.0.1-10.0.0.50
+        # comment
+        172.16.5.100
+    """
+    srv_list = []
+    lines = content.strip().split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        # Check if it's a range
+        if '-' in line:
+            # IP range
+            ips = expand_ip_range(line)
+            for ip in ips:
+                os_t = detect_os_type(ip) if auto_detect else 'Windows'
+                srv_list.append({'ip': ip, 'username': '', 'password': '', 'os_type': os_t})
+        else:
+            # Single IP
+            ip_addr = line.strip()
+            os_t = detect_os_type(ip_addr) if auto_detect else 'Windows'
+            srv_list.append({'ip': ip_addr, 'username': '', 'password': '', 'os_type': os_t})
+    
+    return srv_list
 
 
 def parse_server_list_content(content, auto_detect=True):
@@ -608,9 +802,12 @@ def api_scan_all():
     try:
         # Get project filter from query or body
         proj_id = request.args.get('project_id')
-        if not proj_id and request.is_json:
-            data = request.get_json()
-            proj_id = data.get('project_id') if data else None
+        if not proj_id:
+            try:
+                data = request.get_json(silent=True)
+                proj_id = data.get('project_id') if data else None
+            except:
+                proj_id = None
         
         if proj_id == 'unassigned':
             proj_id = 'unassigned'

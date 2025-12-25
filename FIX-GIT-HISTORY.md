@@ -62,3 +62,4 @@ Eğer hala hata verirse, o zaman history temizleme gerekir.
 
 
 
+

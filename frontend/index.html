@@ -75,11 +75,14 @@
         <!-- Toolbar -->
         <div class="toolbar">
             <div class="toolbar-actions">
+                <button class="btn btn-primary" onclick="showIPRangeModal()">
+                    <span class="btn-icon">🎯</span> IP Range
+                </button>
                 <button class="btn btn-primary" onclick="showImportModal()">
                     <span class="btn-icon">📁</span> Import TXT
                 </button>
                 <button class="btn btn-secondary" onclick="showAddServerModal()">
-                    <span class="btn-icon">➕</span> Add Single Server
+                    <span class="btn-icon">➕</span> Single IP
                 </button>
                 <button class="btn btn-success" onclick="scanAllServers()" id="btnScanAll">
                     <span class="btn-icon">🔄</span> Scan All
@@ -142,6 +145,50 @@
         <div class="loading-overlay" id="loadingOverlay">
             <div class="loading-spinner"></div>
             <p id="loadingText">Loading...</p>
+        </div>
+    </div>
+
+    <!-- IP Range Modal -->
+    <div class="modal" id="ipRangeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add IP Ranges</h2>
+                <button class="modal-close" onclick="closeModal('ipRangeModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="import-info" style="margin-bottom: 20px;">
+                    <p><strong>Add multiple IP ranges:</strong></p>
+                    <p class="example">Each range will scan all IPs between Start and End (last octet)</p>
+                    <p class="example">Example: 192.168.1.1 to 192.168.1.255 = 255 IPs</p>
+                </div>
+                <form id="ipRangeForm" onsubmit="addIPRanges(event)">
+                    <div id="ipRangesList">
+                        <!-- Dynamic IP ranges will be added here -->
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="addIPRangeRow()" style="margin-bottom: 15px;">
+                        <span>+ Add IP Range</span>
+                    </button>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="ipRangeDiscovery" checked>
+                            <strong>Discovery Mode</strong> - Only add active/reachable servers
+                        </label>
+                        <p class="example" style="margin-left: 24px; margin-top: 4px;">
+                            Scans IP ranges and detects which servers are actually online before adding them
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="ipRangeAutoDetect" checked>
+                            Auto-detect OS type
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('ipRangeModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Servers</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

@@ -1098,6 +1098,22 @@ select {
     letter-spacing: 0.5px;
 }
 
+/* Checkbox label - inline style */
+.form-group label.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: none;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.form-group label.checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
 .form-group input,
 .form-group select {
     width: 100%;
@@ -1370,7 +1386,7 @@ select {
     background: rgba(17, 24, 39, 0.8);
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
-    z-index: 100;
+    z-index: 999;  /* Higher z-index to stay above tables */
     opacity: 0.7;
     transition: opacity 0.3s ease;
 }

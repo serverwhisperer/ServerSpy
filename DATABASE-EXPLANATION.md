@@ -75,3 +75,4 @@ Eğer database kullanmak istemiyorsanız, in-memory (RAM'de) saklama yapabiliriz
 
 
 
+
